@@ -1,35 +1,45 @@
-
 import './App.css';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import CreateUser from './components/CreateUser';
-import AddSchedule from './components/AddSchdule'
-import UserSchedule from './components/UserSchedule';
+
 import { BrowserRouter, Route, Routes, Link, useLocation } from 'react-router-dom';
 
-// Navigation component
+import CreateUserPage from './pages/CreateUserPage';
+import AddSchedule from './components/AddSchdule';
+import UserSchedule from './components/UserSchedule';
+
+// Navigation bar (kept same visual style)
 function Navigation() {
   const location = useLocation();
-  
+
   return (
     <nav className="nav-container">
-      <div className="nav-content">
-        <Link to="/" className="nav-brand">
-          📅 Schedule Manager
-        </Link>
+      <div className="nav-inner">
+        <div className="nav-left">
+          <span className="app-title">Shift / Schedule Admin</span>
+        </div>
+
         <div className="nav-links">
-          <Link 
-            to="/" 
-            className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
+          <Link
+            to="/"
+            className={`nav-link ${location.pathname === '/' ? 'nav-link-active' : ''}`}
           >
-            👥 Create User
+            Create User
           </Link>
-          <Link 
-            to="/schedulizer" 
-            className={`nav-link ${location.pathname === '/schedulizer' ? 'active' : ''}`}
+
+          <Link
+            to="/schedulizer"
+            className={`nav-link ${location.pathname === '/schedulizer' ? 'nav-link-active' : ''}`}
           >
-            📋 Manage Schedules
+            Scheduler
+          </Link>
+
+          <Link
+            to="/userschedule"
+            className={`nav-link ${location.pathname === '/userschedule' ? 'nav-link-active' : ''}`}
+          >
+            User Schedule
           </Link>
         </div>
       </div>
@@ -42,16 +52,23 @@ function App() {
     <div className="App">
       <BrowserRouter>
         <Navigation />
-        <div className="container">
+
+        <div className="page-wrapper">
           <Routes>
-            <Route path="/" element={<CreateUser />} />
-            <Route path='/schedulizer' element={<AddSchedule />} />
-            <Route path='/userschedule' element={<UserSchedule />} />
+            {/* Home → CreateUserPage (overtime settings + create employee) */}
+            <Route path="/" element={<CreateUserPage />} />
+
+            {/* Scheduler / global view */}
+            <Route path="/schedulizer" element={<AddSchedule />} />
+
+            {/* Individual user schedule page */}
+            <Route path="/userschedule" element={<UserSchedule />} />
           </Routes>
         </div>
-        <ToastContainer 
+
+        <ToastContainer
           position="top-right"
-          autoClose={3000}
+          autoClose={4000}
           hideProgressBar={false}
           newestOnTop
           closeOnClick

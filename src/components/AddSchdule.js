@@ -1,6 +1,20 @@
+
 import { useState, useEffect, useMemo } from 'react';
 import { dbFirestore } from '../connections/ConnFirebaseServices'
-import { collection, addDoc, onSnapshot, query, orderBy, doc, Timestamp } from 'firebase/firestore';
+import { 
+    collection,
+    addDoc,
+    onSnapshot,
+    query,
+    orderBy,
+    doc,
+    Timestamp,
+    updateDoc,
+    getDoc,
+    setDoc,
+    getDocs,
+    where,
+} from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
@@ -12,7 +26,10 @@ import {
     isWeekend,
     differenceInHours,
     addHours,
-    addDays
+    addDays,
+    parseISO,
+    isAfter,
+    isBefore
 } from 'date-fns';
 import { 
     validateShiftOverlap, 
@@ -21,6 +38,343 @@ import {
 } from '../utils/scheduleUtils';
 
 const localizer = momentLocalizer(moment);
+
+/* -----------------------------------------------------------
+   TIME AND HOURS CALC HELPERS
+----------------------------------------------------------- */
+
+/**
+ * Parse multiple possible time formats into { h, m }.
+ * Supports:
+ *  - "03:00", "3:00"
+ *  - "22:15"
+ *  - "3.00" -> 03:00
+ *  - "10.5" -> 10:30
+ *  - "7"    -> 07:00
+ */
+function parseHHMM(str) {
+    if (!str || typeof str !== 'string') return null;
+
+    // Case 1: "HH:mm" or "H:mm"
+    if (str.includes(':')) {
+        const [h, m] = str.split(':').map(Number);
+        if (isNaN(h) || isNaN(m)) return null;
+        return { h, m };
+    }
+
+    // Case 2: "H.mm" / "HH.mm" e.g. "3.00", "10.25", "10.5"
+    if (str.includes('.')) {
+        const [hRaw, mRaw] = str.split('.');
+        const h = Number(hRaw);
+
+        let m;
+        if (mRaw === undefined || mRaw === '') {
+            m = 0;
+        } else if (/^\d{2}$/.test(mRaw)) {
+            // "3.05" -> 5 min, "3.30" -> 30 min
+            m = Number(mRaw);
+        } else {
+            // "10.5" => "0.5h" => 30 min
+            const frac = Number("0." + mRaw);
+            if (isNaN(frac)) return null;
+            m = Math.round(frac * 60);
+        }
+
+        if (isNaN(h) || isNaN(m)) return null;
+        if (m < 0 || m >= 60) return null;
+
+        return { h, m };
+    }
+
+    // Case 3: just "H" -> assume ":00"
+    if (!isNaN(Number(str))) {
+        const h = Number(str);
+        const m = 0;
+        return { h, m };
+    }
+
+    return null;
+}
+
+/**
+ * Return difference in hours between two Date objects, with decimals.
+ */
+function diffHours(dateStart, dateEnd) {
+    const ms = dateEnd.getTime() - dateStart.getTime();
+    return ms / (1000 * 60 * 60);
+}
+
+/**
+ * Compute worked hours for a shift using the best available data.
+ * Priority:
+ * 1. checkInTimestamp / checkOutTimestamp
+ * 2. checkedInTime / checkedOutTime (+ overnight)
+ *
+ * Returns number (2 decimals) or null.
+ */
+function computeWorkedHoursForShift(shiftData) {
+    if (!shiftData) return null;
+
+    const {
+        checkInTimestamp,
+        checkOutTimestamp,
+        checkedInTime,
+        checkedOutTime,
+        overnight
+    } = shiftData;
+
+    // 1. Highest priority: Timestamp pair
+    if (
+        checkInTimestamp && checkOutTimestamp &&
+        typeof checkInTimestamp.toDate === 'function' &&
+        typeof checkOutTimestamp.toDate === 'function'
+    ) {
+        const startDate = checkInTimestamp.toDate();
+        const endDate   = checkOutTimestamp.toDate();
+        const hours = diffHours(startDate, endDate);
+        if (hours >= 0) {
+            return Number(hours.toFixed(2));
+        }
+    }
+
+    // 2. Fallback: HH:mm style
+    const startParsed = parseHHMM(checkedInTime);
+    const endParsed   = parseHHMM(checkedOutTime);
+
+    if (startParsed && endParsed) {
+        let startTotalMin = startParsed.h * 60 + startParsed.m;
+        let endTotalMin   = endParsed.h * 60 + endParsed.m;
+
+        if (overnight === true && endTotalMin < startTotalMin) {
+            endTotalMin += 24 * 60;
+        }
+
+        const diffMin = endTotalMin - startTotalMin;
+        if (diffMin >= 0) {
+            const hours = diffMin / 60;
+            return Number(hours.toFixed(2));
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Derive the appropriate status for a shift based on its data.
+ * Rules:
+ * - If both checkin + checkout present → "completed"
+ * - Else if has checkIn but no checkOut → "in_progress"
+ * - Else → "scheduled"
+ */
+function deriveShiftStatus(shiftData) {
+    const { checkedInTime, checkedOutTime, checkInTimestamp, checkOutTimestamp } = shiftData || {};
+
+    const hasIn  = !!checkedInTime || !!checkInTimestamp;
+    const hasOut = !!checkedOutTime || !!checkOutTimestamp;
+
+    if (hasIn && hasOut) return 'completed';
+    if (hasIn && !hasOut) return 'in_progress';
+    return 'scheduled';
+}
+
+/* -----------------------------------------------------------
+   WEEKLY OVERTIME / EARNINGS HELPERS
+----------------------------------------------------------- */
+
+/**
+ * Dado un rango de semana (monday->sunday) y TODOS los shifts del usuario
+ * en esa semana, calculamos para CADA día:
+ *  - scheduledHours
+ *  - totalHours (sum of totalHoursDay)
+ *
+ * Luego asignamos regularHours / overtimeHours / overtimeApplied
+ * de manera ACUMULADA semanal (>40h).
+ *
+ * Guardamos cada día en users/{uid}/RecordEarnings/{YYYY-MM-DD}.
+ *
+ * Notas de modelo:
+ * - overtimeThreshold = 40 (horas semanales)
+ * - overtimePercent   = 50 (50% extra) -> internamente 1.5x
+ * - hourlyWageSnapshot = user.hourlyWage actual
+ *
+ * IMPORTANTE:
+ * Esta función recalcula la SEMANA ENTERA cada vez, no solo el día editado.
+ */
+async function syncWeeklyEarningsForUserWeek({
+    userId,
+    userHourlyWage,
+    weekStartDate, // Date obj (monday)
+    weekEndDate,   // Date obj (sunday)
+}) {
+    // 1. Traer los shifts de esa semana desde Firestore
+    //    (para ser robustos, hacemos query por eventDate >= weekStart && <= weekEnd)
+    const weekStartStr = format(weekStartDate, 'yyyy-MM-dd');
+    const weekEndStr   = format(weekEndDate, 'yyyy-MM-dd');
+
+    const userScheduleRef = collection(dbFirestore, 'users', userId, 'UserSchedule');
+    const weekQuery = query(
+        userScheduleRef,
+        where('eventDate', '>=', weekStartStr),
+        where('eventDate', '<=', weekEndStr),
+        orderBy('eventDate')
+    );
+    const snapshot = await getDocs(weekQuery);
+
+    // Construimos un mapa dateStr -> { scheduledHours, totalHours, shifts: [...] }
+    // Inicializamos cada día de la semana para asegurar doc diario aunque 0 horas.
+    const dayMap = {};
+    let cursor = new Date(weekStartDate);
+    while (!isAfter(cursor, weekEndDate)) {
+        const dStr = format(cursor, 'yyyy-MM-dd');
+        dayMap[dStr] = {
+            scheduledHours: 0,
+            totalHours: 0,
+            shifts: []
+        };
+        cursor = addDays(cursor, 1);
+    }
+
+    snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        const dStr = data.eventDate;
+        if (!dayMap[dStr]) {
+            dayMap[dStr] = {
+                scheduledHours: 0,
+                totalHours: 0,
+                shifts: []
+            };
+        }
+
+        // scheduledHours = suma de duration (lo planificado)
+        const planned = typeof data.duration === 'number' ? data.duration : 0;
+        dayMap[dStr].scheduledHours += planned;
+
+        // totalHours = suma de totalHoursDay (lo real)
+        const actual = typeof data.totalHoursDay === 'number' ? data.totalHoursDay : 0;
+        dayMap[dStr].totalHours += actual;
+
+        dayMap[dStr].shifts.push(data);
+    });
+
+    // 2. Asignar regular vs overtime acumulando en orden cronológico.
+    //    Recorremos los días Monday->Sunday, mantenemos contador acumulado de horas regulares.
+    const OVERTIME_THRESHOLD_WEEK = 40; // horas
+    const OVERTIME_EXTRA_PERCENT  = 50; // guardamos "50" en Firestore
+    const OVERTIME_MULTIPLIER     = 1.5; // para calcular paga OT
+
+    let runningTotalRegularEligible = 0;
+
+    cursor = new Date(weekStartDate);
+    while (!isAfter(cursor, weekEndDate)) {
+        const dStr = format(cursor, 'yyyy-MM-dd');
+        const dayInfo = dayMap[dStr];
+
+        // Horas reales este día:
+        const dayHours = dayInfo.totalHours; // e.g. 10.42
+        let regularHoursForDay = 0;
+        let overtimeHoursForDay = 0;
+
+        if (dayHours > 0) {
+            // ¿Cuánto espacio queda antes de cruzar 40h semanales?
+            const remainingRegularCapacity = Math.max(OVERTIME_THRESHOLD_WEEK - runningTotalRegularEligible, 0);
+
+            if (dayHours <= remainingRegularCapacity) {
+                // Todo este día aún cuenta como regular
+                regularHoursForDay = dayHours;
+                overtimeHoursForDay = 0;
+            } else {
+                // Parte va a regular, el resto es OT
+                regularHoursForDay = remainingRegularCapacity;
+                overtimeHoursForDay = dayHours - remainingRegularCapacity;
+            }
+
+            // Actualizar el acumulado semanal de horas regulares reconocidas
+            runningTotalRegularEligible += regularHoursForDay;
+        }
+
+        // Calculamos paga:
+        // regular se paga 1.0x, overtime a 1.5x
+        const wage = typeof userHourlyWage === 'number' ? userHourlyWage : 0;
+        const regularPay  = regularHoursForDay * wage;
+        const overtimePay = overtimeHoursForDay * wage * OVERTIME_MULTIPLIER;
+        const dayEarnings = Number((regularPay + overtimePay).toFixed(2));
+
+        const recordData = {
+            date: dStr,
+            scheduledHours: Number(dayInfo.scheduledHours.toFixed(2)),
+            totalHours: Number(dayInfo.totalHours.toFixed(2)),
+            regularHours: Number(regularHoursForDay.toFixed(2)),
+            overtimeHours: Number(overtimeHoursForDay.toFixed(2)),
+            overtimeApplied: overtimeHoursForDay > 0,
+            hourlyWageSnapshot: wage,
+            overtimePercent: OVERTIME_EXTRA_PERCENT,   // guardamos 50 como en tu BD actual
+            overtimeThreshold: OVERTIME_THRESHOLD_WEEK, // guardamos 40 como en tu BD actual
+            dayEarnings,
+            noWorkRecorded: dayInfo.totalHours === 0,
+            updatedAt: Timestamp.now()
+        };
+
+        // Escribimos/merge en users/{uid}/RecordEarnings/{dStr}
+        const earningsDocRef = doc(
+            dbFirestore,
+            'users',
+            userId,
+            'RecordEarnings',
+            dStr
+        );
+
+        await setDoc(earningsDocRef, recordData, { merge: true });
+
+        cursor = addDays(cursor, 1);
+    }
+}
+
+/* -----------------------------------------------------------
+   SHIFT SYNC HELPERS
+   (status + totalHoursDay)
+----------------------------------------------------------- */
+
+/**
+ * Ensure totalHoursDay AND status are up to date for a given shift.
+ * Only writes if there's an actual difference from Firestore data.
+ */
+async function syncShiftDerivedFieldsIfNeeded(shiftRef, shiftData) {
+    const newHours = computeWorkedHoursForShift(shiftData);
+    const newStatus = deriveShiftStatus(shiftData);
+
+    const patch = {};
+    let needsUpdate = false;
+
+    if (newHours != null) {
+        const currentHours = shiftData.totalHoursDay;
+        if (
+            currentHours === undefined ||
+            currentHours === null ||
+            Number(currentHours) !== newHours
+        ) {
+            patch.totalHoursDay = newHours;
+            needsUpdate = true;
+        }
+    }
+
+    const currentStatus = shiftData.status;
+    if (currentStatus !== newStatus) {
+        patch.status = newStatus;
+        needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+        try {
+            await updateDoc(shiftRef, patch);
+        } catch (err) {
+            console.error('Failed to sync shift fields:', err);
+        }
+    }
+}
+
+/* -----------------------------------------------------------
+   REACT COMPONENT
+----------------------------------------------------------- */
 
 function AddSchedule() {
     const navigate = useNavigate()
@@ -54,18 +408,17 @@ function AddSchedule() {
         { value: 'meeting', label: 'Meeting/Training', color: '#8b5cf6' }
     ];
 
-const timeSlots = useMemo(() => {
-    const slots = [];
-    // Recorremos TODAS las horas del día, 0 a 23
-    for (let hour = 0; hour < 24; hour++) {
-        const h = hour.toString().padStart(2, '0');
-        slots.push(`${h}:00`);
-        slots.push(`${h}:15`);
-        slots.push(`${h}:30`);
-        slots.push(`${h}:45`);
-    }
-    return slots;
-}, []);
+    const timeSlots = useMemo(() => {
+        const slots = [];
+        for (let hour = 0; hour < 24; hour++) {
+            const h = hour.toString().padStart(2, '0');
+            slots.push(`${h}:00`);
+            slots.push(`${h}:15`);
+            slots.push(`${h}:30`);
+            slots.push(`${h}:45`);
+        }
+        return slots;
+    }, []);
 
 
     useEffect(() => {
@@ -77,7 +430,7 @@ const timeSlots = useMemo(() => {
             setColUsersData(data)
             setLoading(false)
             
-            // Load all schedules for calendar view
+            // Load all schedules for calendar view and kick off live syncing logic
             await loadAllSchedules(data);
         }, (error) => {
             toast.error(`Error fetching users: ${error.message}`, { position: 'top-right' });
@@ -117,11 +470,31 @@ const timeSlots = useMemo(() => {
                 const userScheduleRef = collection(dbFirestore, 'users', user.id, 'UserSchedule');
                 const scheduleQuery = query(userScheduleRef, orderBy('eventDate'));
                 
-                onSnapshot(scheduleQuery, (snapshot) => {
-                    const userEvents = snapshot.docs.map(doc => {
-                        const data = doc.data();
-                        
-                        // Create proper date objects for calendar - avoid timezone issues
+                onSnapshot(scheduleQuery, async (snapshot) => {
+                    // Build array of userEvents for calendar / table
+                    const userEvents = await Promise.all(snapshot.docs.map(async (docSnap) => {
+                        const data = docSnap.data();
+                        const shiftRef = doc(dbFirestore, 'users', user.id, 'UserSchedule', docSnap.id);
+
+                        // --- SYNC SHIFT FIELDS (totalHoursDay, status)
+                        await syncShiftDerivedFieldsIfNeeded(shiftRef, data);
+
+                        // Logging for debug / auditing
+                        console.log('[SYNC CHECK]', {
+                            userId: user.id,
+                            shiftId: docSnap.id,
+                            checkedInTime: data.checkedInTime,
+                            checkedOutTime: data.checkedOutTime,
+                            checkInTimestamp: data.checkInTimestamp,
+                            checkOutTimestamp: data.checkOutTimestamp,
+                            overnight: data.overnight,
+                            computedHours: computeWorkedHoursForShift(data),
+                            storedTotalHoursDay: data.totalHoursDay,
+                            statusBefore: data.status,
+                            derivedStatus: deriveShiftStatus(data)
+                        });
+
+                        // Build event object for calendar
                         const start = parseDateTime(data.eventDate, data.startHour);
                         let end;
                         if (data.endDate && data.endDate !== data.eventDate) {
@@ -129,13 +502,12 @@ const timeSlots = useMemo(() => {
                         } else {
                             end = parseDateTime(data.eventDate, data.endHour);
                             if (end <= start) {
-                                // Fallback: treat as overnight if stored without endDate but end <= start
                                 end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
                             }
                         }
 
                         return {
-                            id: doc.id,
+                            id: docSnap.id,
                             userId: user.id,
                             title: `${user.firstName} ${user.lastName} - ${data.eventDescription}`,
                             start: start,
@@ -147,9 +519,24 @@ const timeSlots = useMemo(() => {
                                 shiftType: data.shiftType || 'regular'
                             }
                         };
+                    }));
+
+                    // --- SYNC WEEKLY EARNINGS ---
+                    // Tomamos la SEMANA de HOY para ese usuario,
+                    // porque este componente se usa como "motor en vivo".
+                    // Usaremos el rango Monday->Sunday de la semana actual del sistema.
+                    const now = new Date();
+                    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+                    const weekEnd   = endOfWeek(now, { weekStartsOn: 1 });
+
+                    await syncWeeklyEarningsForUserWeek({
+                        userId: user.id,
+                        userHourlyWage: user.hourlyWage,
+                        weekStartDate: weekStart,
+                        weekEndDate: weekEnd
                     });
 
-                    // Group schedules by user and date for validation
+                    // Group schedules by user and date for validation UI
                     const userDailyGroup = groupShiftsByDate(
                         userEvents.map(event => ({
                             id: event.id,
@@ -163,13 +550,13 @@ const timeSlots = useMemo(() => {
                         }))
                     );
 
-                    // Update daily schedules state
+                    // Update daily schedules state (used by validation)
                     setUserDailySchedules(prev => ({
                         ...prev,
                         [user.id]: userDailyGroup
                     }));
 
-                    // Calculate weekly stats
+                    // Calculate weekly stats for dashboard cards (visual only)
                     const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
                     const currentWeekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
                     
@@ -189,6 +576,7 @@ const timeSlots = useMemo(() => {
                         upcomingShifts: userEvents.filter(event => event.start > new Date()).length
                     };
 
+                    // Update visible calendar state (no UI removal, just merge)
                     setCalendarEvents(prev => {
                         const filtered = prev.filter(event => event.userId !== user.id);
                         return [...filtered, ...userEvents];
@@ -213,7 +601,6 @@ const timeSlots = useMemo(() => {
         const start = new Date(`${eventDate}T${startHour}`);
         let end = new Date(`${eventDate}T${endHour}`);
         if (endsNextDay || end <= start) {
-            // If checkbox chosen OR end <= start (user perhaps forgot to tick), treat as overnight when endsNextDay true
             if (endsNextDay) {
                 if (end <= start) {
                     end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
@@ -268,7 +655,6 @@ const timeSlots = useMemo(() => {
         setSelectedUserName(userName)
         setVisibilitySchdForm(true)
         
-        // Set default date to today if empty
         if (!eventDate) {
             setEventDate(format(new Date(), 'yyyy-MM-dd'));
         }
@@ -519,28 +905,27 @@ const timeSlots = useMemo(() => {
                     {/* Calendar Component */}
                     <div className="card">
                         <Calendar
-    localizer={localizer}
-    events={calendarEvents}
-    startAccessor="start"
-    endAccessor="end"
-    style={{ height: 600 }}
-    onSelectEvent={handleSelectEvent}
-    onSelectSlot={handleSelectSlot}
-    selectable
-    eventPropGetter={eventStyleGetter}
-    views={['month', 'week', 'day', 'agenda']}
-    defaultView="week"
-    step={15}
-    timeslots={4}
-    // Ajuste para mostrar TODAS las 24 horas del día:
-    min={new Date(0, 0, 0, 0, 0, 0)}      // 00:00
-    max={new Date(0, 0, 0, 23, 59, 0)}    // 23:59
-    formats={{
-        timeGutterFormat: 'HH:mm',
-        eventTimeRangeFormat: ({ start, end }) =>
-            `${format(start, 'HH:mm')} - ${format(end, 'HH:mm')}`
-    }}
-/>
+                            localizer={localizer}
+                            events={calendarEvents}
+                            startAccessor="start"
+                            endAccessor="end"
+                            style={{ height: 600 }}
+                            onSelectEvent={handleSelectEvent}
+                            onSelectSlot={handleSelectSlot}
+                            selectable
+                            eventPropGetter={eventStyleGetter}
+                            views={['month', 'week', 'day', 'agenda']}
+                            defaultView="week"
+                            step={15}
+                            timeslots={4}
+                            min={new Date(0, 0, 0, 0, 0, 0)}      // 00:00
+                            max={new Date(0, 0, 0, 23, 59, 0)}    // 23:59
+                            formats={{
+                                timeGutterFormat: 'HH:mm',
+                                eventTimeRangeFormat: ({ start, end }) =>
+                                    `${format(start, 'HH:mm')} - ${format(end, 'HH:mm')}`
+                            }}
+                        />
 
                     </div>
                 </div>
@@ -789,7 +1174,6 @@ const timeSlots = useMemo(() => {
                                                 }
                                                 const duration = differenceInHours(end, start);
                                                 
-                                                // Get existing shifts info
                                                 const userDailyData = userDailySchedules[selectedUserId];
                                                 const existingShiftsForDate = userDailyData && userDailyData[eventDate] 
                                                     ? userDailyData[eventDate].shifts 
@@ -914,4 +1298,3 @@ const timeSlots = useMemo(() => {
 }
 
 export default AddSchedule;
-
