@@ -34,7 +34,7 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
             }
             const hrs = differenceInMinutes(end, start) / 60;
             return `${hrs.toFixed(2)}h scheduled`;
-        } catch { return '—' }
+        } catch { return '' }
     })();
 
     return (
@@ -43,7 +43,7 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
                 <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                         <span className="text-lg font-mono font-semibold">
-                            {shift.startHour} - {shift.endHour}{shift.isContinuation ? ' (cont.)' : ''}{(shift.overnight || shift.isContinuation) && ' 🌙'}
+                            {shift.startHour} - {shift.endHour}{shift.isContinuation ? ' (cont.)' : ''}{(shift.overnight || shift.isContinuation) && ' '}
                         </span>
                         <span className={`px-2 py-1 rounded text-sm font-medium ${statusInfo.bgColor} ${statusInfo.textColor}`}>
                             {statusInfo.label}
@@ -51,23 +51,23 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
                         <span className="text-sm text-gray-500">({scheduledDurationText})</span>
                     </div>
 
-                    <div className="text-gray-700 mb-2">📝 {shift.eventDescription}</div>
+                    <div className="text-gray-700 mb-2"> {shift.eventDescription}</div>
 
                     <div className="flex gap-6 text-sm">
                         <div className="flex items-center gap-1">
-                            <span>🕐 Check-in:</span>
+                            <span> Check-in:</span>
                             <span className={shift.checkedInTime ? 'text-green-600 font-mono' : 'text-gray-400'}>
                                 {shift.checkedInTime || 'Not recorded'}
                             </span>
                         </div>
                         <div className="flex items-center gap-1">
-                            <span>🏁 Check-out:</span>
+                            <span> Check-out:</span>
                             <span className={shift.checkedOutTime ? 'text-blue-600 font-mono' : 'text-gray-400'}>
                                 {shift.checkedOutTime || 'Not recorded'}
                             </span>
                         </div>
                         <div className="flex items-center gap-1">
-                            <span>⏱️ Total:</span>
+                            <span> Total:</span>
                             <span className={shift.totalHoursDay ? 'text-green-600 font-semibold' : 'text-gray-400'}>
                                 {shift.totalHoursDay ? `${shift.totalHoursDay}h` : '-'}
                             </span>
@@ -83,7 +83,7 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
                             disabled={isUpdating}
                             title="Quick Check-In"
                         >
-                            🕐 Check In
+                             Check In
                         </button>
                     )}
                     {canCheckOut && (
@@ -93,7 +93,7 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
                             disabled={isUpdating}
                             title="Quick Check-Out"
                         >
-                            🏁 Check Out
+                             Check Out
                         </button>
                     )}
                     {!shift.isContinuation && (
@@ -102,7 +102,7 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
                             className="btn btn-primary btn-sm"
                             title="Edit Times"
                         >
-                            ✏️ Edit
+                             Edit
                         </button>
                     )}
                 </div>
@@ -120,7 +120,7 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
                         return (
                             <div className="mt-3 pt-2 border-t border-dashed border-gray-300">
                                 <div className={`text-xs text-center py-1 px-2 rounded ${breakMinutes >= 30 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                                    ⏸️ Break: {Math.floor(breakMinutes / 60)}h {breakMinutes % 60}m{breakMinutes < 30 && ' (⚠️ Less than 30 min recommended)'}
+                                     Break: {Math.floor(breakMinutes / 60)}h {breakMinutes % 60}m{breakMinutes < 30 && ' ( Less than 30 min recommended)'}
                                 </div>
                             </div>
                         )

@@ -106,8 +106,8 @@ function AddSchedule() {
     useEffect(() => {
         if (eventDate && startHour && endHour && selectedUserId) {
             const userDailyData = userDailySchedules[selectedUserId];
-            const existingShiftsForDate = userDailyData && userDailyData[eventDate] 
-                ? userDailyData[eventDate].shifts 
+            const existingShiftsForDate = userDailyData && userDailyData[eventDate]
+                ? userDailyData[eventDate].shifts
                 : [];
 
             const validation = validateShiftOverlap(
@@ -283,8 +283,8 @@ function AddSchedule() {
         }
 
         const userDailyData = userDailySchedules[selectedUserId];
-        const existingShiftsForDate = userDailyData && userDailyData[eventDate] 
-            ? userDailyData[eventDate].shifts 
+        const existingShiftsForDate = userDailyData && userDailyData[eventDate]
+            ? userDailyData[eventDate].shifts
             : [];
 
         const validation = validateShiftOverlap(
@@ -305,7 +305,7 @@ function AddSchedule() {
 
         if (existingShiftsForDate.length > 0) {
             toast.success(
-                `✅ Valid shift. Total daily hours (start date): ${validation.totalDailyHours}h`, 
+                ` Valid shift. Total daily hours (start date): ${validation.totalDailyHours}h`, 
                 { position: 'top-right', autoClose: 3000 }
             );
         }
@@ -397,14 +397,14 @@ function AddSchedule() {
 
         return addDoc(userSubColSchdRef, documentData)
             .then((docRef) => {
-                toast.success(`✅ Schedule created successfully!`, {
+                toast.success(` Schedule created successfully!`, {
                     position: 'top-right',
                     autoClose: 2000
                 });
                 return docRef.id;
             })
             .catch((error) => {
-                toast.error(`❌ Error creating schedule: ${error.message}`, {
+                toast.error(` Error creating schedule: ${error.message}`, {
                     position: 'top-right'
                 });
                 throw error;
@@ -473,7 +473,7 @@ function AddSchedule() {
             <div className="card mb-4">
                 <div className="flex justify-between items-center">
                     <div>
-                        <h1 className="card-title">📋 Schedule Management</h1>
+                        <h1 className="card-title"> Schedule Management</h1>
                         <p className="card-subtitle">Manage employee schedules and time tracking</p>
                     </div>
                     <div className="flex gap-2">
@@ -481,13 +481,13 @@ function AddSchedule() {
                             onClick={() => setCurrentView('lista')}
                             className={`btn ${currentView === 'lista' ? 'btn-primary' : 'btn-secondary'}`}
                         >
-                            📋 List View
+                             List View
                         </button>
                         <button 
                             onClick={() => setCurrentView('calendario')}
                             className={`btn ${currentView === 'calendario' ? 'btn-primary' : 'btn-secondary'}`}
                         >
-                            📅 Calendar View
+                             Calendar View
                         </button>
                     </div>
                 </div>
@@ -612,7 +612,7 @@ function AddSchedule() {
                                     onClick={() => navigate('/')}
                                     className="btn btn-primary"
                                 >
-                                    👥 Create First Employee
+                                     Create First Employee
                                 </button>
                             </div>
                         ) : (
@@ -648,7 +648,7 @@ function AddSchedule() {
                                                             </div>
                                                             {todayShifts > 0 && (
                                                                 <div className="text-xs text-blue-600 mt-1">
-                                                                    📅 {todayShifts} shift{todayShifts > 1 ? 's' : ''} today
+                                                                     {todayShifts} shift{todayShifts > 1 ? 's' : ''} today
                                                                 </div>
                                                             )}
                                                         </div>
@@ -667,7 +667,7 @@ function AddSchedule() {
                                                         <div className="flex items-center gap-2">
                                                             <span>{stats.weeklyHours}h</span>
                                                             {stats.weeklyHours > 40 && (
-                                                                <span className="text-orange-500 text-sm" title="Overtime hours">⚠️</span>
+                                                                <span className="text-orange-500 text-sm" title="Overtime hours"></span>
                                                             )}
                                                         </div>
                                                         <div className="text-xs text-gray-500">
@@ -689,14 +689,14 @@ function AddSchedule() {
                                                                 className="btn btn-success btn-sm"
                                                                 title="Create New Shift"
                                                             >
-                                                                ➕ Shift
+                                                                 Shift
                                                             </button>
                                                             <button
                                                                 onClick={() => navigateScheduleUser(user)}
                                                                 className="btn btn-primary btn-sm"
                                                                 title="View User Schedule"
                                                             >
-                                                                👁️ View
+                                                                 View
                                                             </button>
                                                         </div>
                                                     </td>
@@ -713,7 +713,7 @@ function AddSchedule() {
                                 onClick={() => navigate('/')} 
                                 className="btn btn-secondary"
                             >
-                                ← Back to Create User
+                                Back to Create User
                             </button>
                         </div>
                     </div>
@@ -727,7 +727,7 @@ function AddSchedule() {
                         <div className="modal-header">
                             <div>
                                 <h2 className="modal-title">
-                                    📅 Create Schedule for {selectedUserName}
+                                     Create Schedule for {selectedUserName}
                                 </h2>
                                 <p className="text-sm text-gray-500 mt-1">
                                     Schedule a new work shift or appointment
@@ -738,14 +738,14 @@ function AddSchedule() {
                                 className="modal-close"
                                 disabled={isSubmitting}
                             >
-                                ✕
+                                
                             </button>
                         </div>
 
                         <form onSubmit={addSchedule} className="space-y-4">
                             <div className="form-group">
                                 <label className="form-label">
-                                    📅 Event Date *
+                                     Event Date *
                                 </label>
                                 <input
                                     type='date'
@@ -761,7 +761,7 @@ function AddSchedule() {
                             <div className="flex gap-4">
                                 <div className="form-group flex-1">
                                     <label className="form-label">
-                                        🕐 Start Time *
+                                         Start Time *
                                     </label>
                                     <select
                                         value={startHour}
@@ -779,7 +779,7 @@ function AddSchedule() {
 
                                 <div className="form-group flex-1">
                                     <label className="form-label">
-                                        🕐 End Time *
+                                         End Time *
                                     </label>
                                     <select
                                         value={endHour}
@@ -806,22 +806,22 @@ function AddSchedule() {
                                     disabled={isSubmitting}
                                 />
                                 <label htmlFor="endsNextDay" className="form-label !mb-0">
-                                    🌙 Ends Next Day (Overnight Shift)
+                                     Ends Next Day (Overnight Shift)
                                 </label>
                             </div>
 
                             {startHour && endHour && eventDate && (
                                 <div className={`p-3 rounded ${
-                                    validationResult?.isValid === false 
-                                        ? 'bg-red-50 border border-red-200' 
-                                        : validationResult?.isValid === true 
+                                    validationResult?.isValid === false
+                                        ? 'bg-red-50 border border-red-200'
+                                        : validationResult?.isValid === true
                                             ? 'bg-green-50 border border-green-200'
                                             : 'bg-blue-50'
                                 }`}>
                                     <div className={`text-sm ${
-                                        validationResult?.isValid === false 
-                                            ? 'text-red-700' 
-                                            : validationResult?.isValid === true 
+                                        validationResult?.isValid === false
+                                            ? 'text-red-700'
+                                            : validationResult?.isValid === true
                                                 ? 'text-green-700'
                                                 : 'text-blue-700'
                                     }`}>
@@ -838,24 +838,24 @@ function AddSchedule() {
                                                 const duration = differenceInHours(end, start);
                                                 
                                                 const userDailyData = userDailySchedules[selectedUserId];
-                                                const existingShiftsForDate = userDailyData && userDailyData[eventDate] 
-                                                    ? userDailyData[eventDate].shifts 
+                                                const existingShiftsForDate = userDailyData && userDailyData[eventDate]
+                                                    ? userDailyData[eventDate].shifts
                                                     : [];
 
                                                 return (
                                                     <div>
                                                         <div className="font-medium mb-2">
-                                                            📊 Shift Information
+                                                             Shift Information
                                                         </div>
                                                         <div className="space-y-1">
-                                                            <div>⏱️ Duration: {duration} hour{duration !== 1 ? 's' : ''} {validationResult?.overnight && ' (overnight)'} </div>
-                                                            <div>📅 Existing shifts this day: {existingShiftsForDate.length}</div>
+                                                            <div> Duration: {duration} hour{duration !== 1 ? 's' : ''} {validationResult?.overnight && ' (overnight)'} </div>
+                                                            <div> Existing shifts this day: {existingShiftsForDate.length}</div>
                                                             {validationResult && (
                                                                 <div className="mt-2 p-2 rounded bg-white">
                                                                     <div className={`text-sm font-medium ${
                                                                         validationResult.isValid ? 'text-green-800' : 'text-red-800'
                                                                     }`}>
-                                                                        {validationResult.isValid ? '✅' : '❌'} {validationResult.message}
+                                                                        {validationResult.message}
                                                                     </div>
                                                                     {validationResult.isValid && validationResult.totalDailyHours && (
                                                                         <div className="text-xs text-gray-600 mt-1">
@@ -867,12 +867,12 @@ function AddSchedule() {
                                                         </div>
                                                         {eventDate && isWeekend(new Date(eventDate)) && (
                                                             <div className="mt-2 text-orange-600">
-                                                                🎯 Weekend - Overtime rate
+                                                                 Weekend - Overtime rate
                                                             </div>
                                                         )}
                                                         {validationResult?.overnight && (
                                                             <div className="mt-2 text-indigo-600">
-                                                                🌙 Overnight shift spanning {eventDate} → {format(addDays(new Date(eventDate),1), 'yyyy-MM-dd')}
+                                                                 Overnight shift spanning {eventDate}  {format(addDays(new Date(eventDate),1), 'yyyy-MM-dd')}
                                                             </div>
                                                         )}
                                                         {existingShiftsForDate.length > 0 && (
@@ -882,7 +882,7 @@ function AddSchedule() {
                                                                 </div>
                                                                 {existingShiftsForDate.map((shift, index) => (
                                                                     <div key={shift.id || index} className="text-xs text-gray-600">
-                                                                        • {shift.startHour} - {shift.endHour}: {shift.eventDescription}
+                                                                         {shift.startHour} - {shift.endHour}: {shift.eventDescription}
                                                                     </div>
                                                                 ))}
                                                             </div>
@@ -899,7 +899,7 @@ function AddSchedule() {
 
                             <div className="form-group">
                                 <label className="form-label">
-                                    📝 Event Description *
+                                     Event Description *
                                 </label>
                                 <textarea
                                     value={eventDescription}
@@ -916,8 +916,8 @@ function AddSchedule() {
                                 <button 
                                     type='submit'
                                     className={`btn flex-1 ${
-                                        validationResult?.isValid === false 
-                                            ? 'btn-danger' 
+                                        validationResult?.isValid === false
+                                            ? 'btn-danger'
                                             : validationResult?.isValid === true
                                                 ? 'btn-success'
                                                 : 'btn-primary'
@@ -931,15 +931,15 @@ function AddSchedule() {
                                         </>
                                     ) : validationResult?.isValid === false ? (
                                         <>
-                                            ❌ Schedule Conflict
+                                             Schedule Conflict
                                         </>
                                     ) : validationResult?.isValid === true ? (
                                         <>
-                                            ✅ Create Shift
+                                             Create Shift
                                         </>
                                     ) : (
                                         <>
-                                            💾 Create Shift
+                                             Create Shift
                                         </>
                                     )}
                                 </button>
@@ -949,7 +949,7 @@ function AddSchedule() {
                                     className="btn btn-secondary"
                                     disabled={isSubmitting}
                                 >
-                                    ❌ Cancel
+                                     Cancel
                                 </button>
                             </div>
                         </form>

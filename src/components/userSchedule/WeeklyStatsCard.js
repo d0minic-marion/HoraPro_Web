@@ -10,7 +10,7 @@ function WeeklyStatsCard({ weeklyStats, overtimeSettings }) {
             <div className="stat-card success">
                 <div className="stat-value">{weeklyStats.workedHours}</div>
                 <div className="stat-label">Worked Hours {weeklyStats.overtimeHours > 0 && (
-                    <span className="block text-xs text-green-700 mt-1">Reg {weeklyStats.regularHours}h • OT {weeklyStats.overtimeHours}h</span>
+                    <span className="block text-xs text-green-700 mt-1">Reg {weeklyStats.regularHours}h  OT {weeklyStats.overtimeHours}h</span>
                 )}</div>
             </div>
             <div className="stat-card warning">
@@ -22,7 +22,7 @@ function WeeklyStatsCard({ weeklyStats, overtimeSettings }) {
                 <div className="stat-label">Weekly Earnings (CAD)
                     {(weeklyStats.overtimeEarnings > 0 || weeklyStats.regularEarnings > 0) && (
                         <span className="block text-xs text-gray-600 mt-1">
-                            Reg ${weeklyStats.regularEarnings.toFixed(2)}{weeklyStats.overtimeEarnings > 0 && ` • OT $${weeklyStats.overtimeEarnings.toFixed(2)}`}
+                            Reg ${weeklyStats.regularEarnings.toFixed(2)}{weeklyStats.overtimeEarnings > 0 && `  OT $${weeklyStats.overtimeEarnings.toFixed(2)}`}
                         </span>
                     )}
                 </div>

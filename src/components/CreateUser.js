@@ -343,9 +343,9 @@ function CreateUser() {
                         <div className="p-2 border rounded bg-gray-50 text-sm text-gray-700">
                             {otLoading
                                 ? 'Loading...'
-                                : otUpdatedAt
-                                ? otUpdatedAt.toLocaleString()
-                                : 'No data'}
+                                : (otUpdatedAt
+                                    ? (otUpdatedAt.toDate ? otUpdatedAt.toDate().toLocaleString() : otUpdatedAt.toLocaleString())
+                                    : 'No data')}
                         </div>
                     </div>
 
@@ -356,7 +356,7 @@ function CreateUser() {
                             className="btn btn-primary"
                             disabled={otSaving || otLoading}
                         >
-                            {otSaving ? 'Saving...' : '💾 Save Overtime Rules'}
+                            {otSaving 'Saving...' : '💾 Save Overtime Rules'}
                         </button>
                     </div>
                 </form>
@@ -383,7 +383,7 @@ function CreateUser() {
                         <input
                             id="firstName"
                             type="text"
-                            className={`form-input ${errors.firstName ? 'border-danger' : ''
+                            className={`form-input ${errors.firstName 'border-danger' : ''
                                 }`}
                             value={firstName}
                             disabled={isSubmitting}
@@ -404,7 +404,7 @@ function CreateUser() {
                         <input
                             id="lastName"
                             type="text"
-                            className={`form-input ${errors.lastName ? 'border-danger' : ''
+                            className={`form-input ${errors.lastName 'border-danger' : ''
                                 }`}
                             value={lastName}
                             disabled={isSubmitting}
@@ -426,7 +426,7 @@ function CreateUser() {
                             id="category"
                             value={category}
                             onChange={(e) => setCategory(e.target.value)}
-                            className={`form-select ${errors.category ? 'border-danger' : ''
+                            className={`form-select ${errors.category 'border-danger' : ''
                                 }`}
                             disabled={isSubmitting}
                         >
@@ -455,7 +455,7 @@ function CreateUser() {
                             min={15.75}
                             max={500}
                             step={0.01}
-                            className={`form-input ${errors.hourlyWage ? 'border-danger' : ''
+                            className={`form-input ${errors.hourlyWage 'border-danger' : ''
                                 }`}
                             value={hourlyWage}
                             disabled={isSubmitting}
@@ -479,7 +479,7 @@ function CreateUser() {
                         <input
                             id="email"
                             type="email"
-                            className={`form-input ${errors.email ? 'border-danger' : ''
+                            className={`form-input ${errors.email 'border-danger' : ''
                                 }`}
                             value={email}
                             disabled={isSubmitting}
@@ -504,7 +504,7 @@ function CreateUser() {
                         <input
                             id="tempPassword"
                             type="password"
-                            className={`form-input ${errors.tempPassword ? 'border-danger' : ''
+                            className={`form-input ${errors.tempPassword 'border-danger' : ''
                                 }`}
                             value={tempPassword}
                             disabled={isSubmitting}
@@ -527,7 +527,7 @@ function CreateUser() {
                             className="btn btn-primary flex-1"
                             disabled={isSubmitting}
                         >
-                            {isSubmitting ? 'Creating...' : '➕ Create User'}
+                            {isSubmitting 'Creating...' : '➕ Create User'}
                         </button>
 
                         <button

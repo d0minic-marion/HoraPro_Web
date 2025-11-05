@@ -5,28 +5,33 @@ import { dbFirestore } from '../connections/ConnFirebaseServices'
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, getDoc, addDoc, deleteDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Calendar, momentLocalizer } from 'react-big-calendar';
-import moment from 'moment';
+
+import { syncShiftDerivedFieldsIfNeeded } from '../utils/shiftSyncHelpers';
+
 import {
     format,
     differenceInMinutes,
     startOfWeek,
     endOfWeek,
-    isToday,
+    
     isPast,
     addDays,
     startOfDay,
     endOfDay,
     isSameDay
 } from 'date-fns';
+import UserScheduleHeader from './userSchedule/UserScheduleHeader';
+import WeeklyStatsCard from './userSchedule/WeeklyStatsCard';
+import ScheduleList from './userSchedule/ScheduleList';
+import CalendarPanel from './userSchedule/CalendarPanel';
+import { syncWeeklyEarningsForUserWeek } from '../utils/earningsHelpers';
 import {
     groupShiftsByDate,
-    getShiftStatus,
-    parseDate,
+    
     parseDateTime
 } from '../utils/scheduleUtils';
 
-const localizer = momentLocalizer(moment);
+
 
 function UserSchedule() {
     const navigate = useNavigate()
@@ -238,11 +243,26 @@ function UserSchedule() {
             setScheduleData(scheduleRegisters)
             const grouped = groupShiftsByDate(scheduleRegisters);
             setGroupedSchedules(grouped);
+            
+            // --- Silent reactive sync for external changes (no UI impact)
+            // Ensures totalHoursDay and status stay correct if external apps modify check-in/out fields.
+            try {
+                snapshot.docs.forEach((docSnap) => {
+                    const shiftRef = doc(dbFirestore, 'users', userId, 'UserSchedule', docSnap.id);
+                    const data = docSnap.data();
+                    // Fire-and-forget; avoids blocking UI. Helper only writes when values differ.
+                    syncShiftDerivedFieldsIfNeeded(shiftRef, data).catch((err) => {
+                        console.error('[AutoSync] Failed to sync derived fields', { id: docSnap.id, err });
+                    });
+                });
+            } catch (err) {
+                console.error('[AutoSync] Error preparing sync', err);
+            }
             setLoading(false)
         }, (error) => {
             console.log('Error fetching schedule', error)
             toast.error('Error loading schedule data', { position: 'top-right' });
-            setLoading(false)
+setLoading(false)
         })
         return () => unsubscribe()
     }, [userId, navigate, currentUserName, currentUserCategory, userData])
@@ -368,7 +388,7 @@ function UserSchedule() {
                 }
             }
 
-            // status / color (copia exacta de tu lógica original)
+            // status / color (copia exacta de tu lgica original)
             let status = 'scheduled';
             let color = '#2563eb';
             if (schedule.checkedInTime && schedule.checkedOutTime) {
@@ -385,9 +405,9 @@ function UserSchedule() {
                 color = '#6366f1';
             }
 
-            const baseTitle = schedule.eventDescription + (schedule.overnight ? ' (🌙)' : '');
+            const baseTitle = schedule.eventDescription + (schedule.overnight ? ' (overnight)' : '');
 
-            // caso simple: no cruza de día
+            // caso simple: no cruza de da
             if (isSameDay(start, finalEnd)) {
                 return [{
                     id: schedule.id,
@@ -460,9 +480,25 @@ function UserSchedule() {
                 checkInTimestamp: new Date(),
                 eventDescription: shiftDescription || reg.eventDescription
             });
-            toast.success("✅ Checked in successfully!");
+            toast.success(" Checked in successfully!");
+            // Re-sync weekly earnings for the affected week (non-blocking)
+            try {
+                if (userData && userData.hourlyWage) {
+                    const eventDateObj = new Date(reg.eventDate);
+                    const weekStart = startOfWeek(eventDateObj, { weekStartsOn: 1 });
+                    const weekEnd = endOfWeek(eventDateObj, { weekStartsOn: 1 });
+                    await syncWeeklyEarningsForUserWeek({
+                        userId,
+                        userHourlyWage: parseFloat(userData.hourlyWage) || 0,
+                        weekStartDate: weekStart,
+                        weekEndDate: weekEnd,
+                    });
+                }
+            } catch (e) {
+                console.error('Weekly earnings sync failed (non-blocking):', e);
+            }
         } catch (error) {
-            toast.error("❌ Failed to check in!");
+            toast.error(" Failed to check in!");
         } finally {
             setIsUpdating(false);
         }
@@ -502,10 +538,10 @@ function UserSchedule() {
                 status: 'completed',
                 eventDescription: shiftDescription || reg.eventDescription
             });
-            toast.success("✅ Checked out successfully!");
+            toast.success(" Checked out successfully!");
             setEditMenuVisibility(false);
         } catch (error) {
-            toast.error("❌ Failed to check out!");
+            toast.error(" Failed to check out!");
         } finally {
             setIsUpdating(false);
         }
@@ -534,9 +570,9 @@ function UserSchedule() {
             await updateDoc(doc(dbFirestore, 'users', userId, "UserSchedule", reg.id), {
                 eventDescription: shiftDescription || 'No description'
             });
-            toast.success("✅ Description updated successfully!");
+            toast.success(" Description updated successfully!");
         } catch (error) {
-            toast.error("❌ Error updating description!");
+            toast.error(" Error updating description!");
         } finally {
             setIsUpdating(false);
         }
@@ -582,7 +618,7 @@ function UserSchedule() {
 
         if (overlappingShifts.length > 0) {
             const overlappingShift = overlappingShifts[0];
-            toast.error(`⚠️ Schedule conflict: The new schedule would overlap with the shift from ${overlappingShift.startHour} to ${overlappingShift.endHour} - "${overlappingShift.eventDescription}"`, {
+            toast.error(` Schedule conflict: The new schedule would overlap with the shift from ${overlappingShift.startHour} to ${overlappingShift.endHour} - "${overlappingShift.eventDescription}"`, {
                 position: 'top-right',
                 autoClose: 6000
             });
@@ -598,9 +634,14 @@ function UserSchedule() {
                 overnight: crosses,
                 eventDescription: shiftDescription || reg.eventDescription
             });
-            toast.success("✅ Shift times updated successfully!");
+            // Ensure planned duration stays in sync (hours)
+            try {
+                const _durationHours = +(durationMinutes / 60).toFixed(2);
+                await updateDoc(doc(dbFirestore, 'users', userId, "UserSchedule", reg.id), { duration: _durationHours });
+            } catch {}
+            toast.success(" Shift times updated successfully!");
         } catch (error) {
-            toast.error("❌ Error updating shift times!");
+            toast.error(" Error updating shift times!");
             console.error('Error updating schedule times:', error);
         } finally {
             setIsUpdating(false);
@@ -681,7 +722,7 @@ function UserSchedule() {
 
         if (overlappingShifts.length > 0) {
             const overlappingShift = overlappingShifts[0];
-            toast.error(`⚠️ Cannot create shift: It would overlap with the existing shift from ${overlappingShift.startHour} to ${overlappingShift.endHour} - "${overlappingShift.eventDescription}"`, {
+            toast.error(` Cannot create shift: It would overlap with the existing shift from ${overlappingShift.startHour} to ${overlappingShift.endHour} - "${overlappingShift.eventDescription}"`, {
                 position: 'top-right',
                 autoClose: 6000
             });
@@ -701,7 +742,7 @@ function UserSchedule() {
         setCreateShiftVisible(true);
     };
 
-    // ⬇⬇⬇ ESTA ES LA FUNCIÓN QUE TE FALTÓ EN LA VERSIÓN PEGADA
+    //  ESTA ES LA FUNCIN QUE TE FALT EN LA VERSIN PEGADA
     const createShiftWithDescription = async () => {
         if (!newShiftData) return;
 
@@ -725,7 +766,7 @@ function UserSchedule() {
 
             if (overlappingShifts.length > 0) {
                 const overlappingShift = overlappingShifts[0];
-                toast.error(`⚠️ Schedule conflict: There is already a shift from ${overlappingShift.startHour} to ${overlappingShift.endHour} - "${overlappingShift.eventDescription}"`, {
+                toast.error(` Schedule conflict: There is already a shift from ${overlappingShift.startHour} to ${overlappingShift.endHour} - "${overlappingShift.eventDescription}"`, {
                     position: 'top-right',
                     autoClose: 6000
                 });
@@ -764,7 +805,7 @@ function UserSchedule() {
             setIsUpdating(false);
         }
     };
-    // ⬆⬆⬆ ESTA PARTE TIENE QUE EXISTIR DENTRO DEL COMPONENTE UserSchedule()
+    //  ESTA PARTE TIENE QUE EXISTIR DENTRO DEL COMPONENTE UserSchedule()
 
     const eventStyleGetter = (event) => {
         return {
@@ -790,82 +831,28 @@ function UserSchedule() {
 
     return (
         <div className="animate-fade-in">
-            {/* Header with Live Clock */}
-            <div className="card mb-6">
-                <div className="flex justify-between items-center mb-4">
-                    <div>
-                        <h1 className="card-title">📅 Employee Schedule - {currentUserName}</h1>
-                        <p className="card-subtitle">
-                            {currentUserCategory && `${currentUserCategory} • `}Track your work schedule and time entries
-                        </p>
-                    </div>
-                    <div className="text-right">
-                        <div className="current-time">
-                            {format(currentTime, 'HH:mm:ss')}
-                        </div>
-                        <div className="current-date">
-                            {format(currentTime, 'EEEE, MMMM dd, yyyy')}
-                        </div>
-                    </div>
-                </div>
-
-                {/* View Toggle */}
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setCurrentView('table')}
-                        className={`btn ${currentView === 'table' ? 'btn-primary' : 'btn-secondary'}`}
-                    >
-                        📋 Table View
-                    </button>
-                    <button
-                        onClick={() => setCurrentView('calendar')}
-                        className={`btn ${currentView === 'calendar' ? 'btn-primary' : 'btn-secondary'}`}
-                    >
-                        📅 Calendar View
-                    </button>
-                </div>
-            </div>
+            <UserScheduleHeader
+                currentUserName={currentUserName}
+                currentUserCategory={currentUserCategory}
+                currentTime={currentTime}
+                currentView={currentView}
+                setCurrentView={setCurrentView}
+            />
 
             {/* Overtime Threshold Alert */}
             {weeklyStats.thresholdCrossed && (
                 <div className="mb-4 p-4 rounded border border-orange-300 bg-orange-50 text-orange-800 animate-pulse-soft">
-                    ⚠️ You have exceeded the weekly threshold of {overtimeSettings.thresholdHours}h. Overtime hours this week: {weeklyStats.overtimeHours.toFixed(2)}h.
+                     You have exceeded the weekly threshold of {overtimeSettings.thresholdHours}h. Overtime hours this week: {weeklyStats.overtimeHours.toFixed(2)}h.
                 </div>
             )}
 
-            {/* Weekly Statistics */}
-            <div className="stats-grid mb-6">
-                <div className="stat-card">
-                    <div className="stat-value">{weeklyStats.scheduledHours}</div>
-                    <div className="stat-label">Scheduled Hours</div>
-                </div>
-                <div className="stat-card success">
-                    <div className="stat-value">{weeklyStats.workedHours}</div>
-                    <div className="stat-label">Worked Hours {weeklyStats.overtimeHours > 0 && (
-                        <span className="block text-xs text-green-700 mt-1">Reg {weeklyStats.regularHours}h • OT {weeklyStats.overtimeHours}h</span>
-                    )}</div>
-                </div>
-                <div className="stat-card warning">
-                    <div className="stat-value">{weeklyStats.efficiency}%</div>
-                    <div className="stat-label">Efficiency</div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-value">${weeklyStats.weeklyEarnings}</div>
-                    <div className="stat-label">Weekly Earnings (CAD)
-                        {(weeklyStats.overtimeEarnings > 0 || weeklyStats.regularEarnings > 0) && (
-                            <span className="block text-xs text-gray-600 mt-1">
-                                Reg ${weeklyStats.regularEarnings.toFixed(2)}{weeklyStats.overtimeEarnings > 0 && ` • OT $${weeklyStats.overtimeEarnings.toFixed(2)}`}
-                            </span>
-                        )}
-                    </div>
-                </div>
-            </div>
+            <WeeklyStatsCard weeklyStats={weeklyStats} overtimeSettings={overtimeSettings} />
 
             {scheduleData.length === 0 ? (
                 <div className="card text-center">
                     <div className="py-8">
                         <h2 className="text-xl font-semibold text-gray-600 mb-4">
-                            📅 No Schedule Found
+                             No Schedule Found
                         </h2>
                         <p className="text-gray-500 mb-6">
                             You don't have any scheduled shifts yet.
@@ -874,301 +861,31 @@ function UserSchedule() {
                             onClick={() => navigate('/schedulizer')}
                             className="btn btn-primary"
                         >
-                            📋 Go to Schedule Management
+                             Go to Schedule Management
                         </button>
                     </div>
                 </div>
             ) : (
                 <>
                     {currentView === 'table' && (
-                        <div className="card animate-slide-in">
-                            <div className="card-header">
-                                <h2 className="card-title">📊 Schedules by Date</h2>
-                                <p className="text-sm text-gray-600">
-                                    Shifts organized by day with daily totals
-                                </p>
-                            </div>
-
-                            <div className="card-body h-48 overflow-y-auto">
-                                <div className="space-y-6">
-                                    {Object.keys(groupedSchedules)
-                                        .sort((a, b) => a.localeCompare(b))
-                                        .map(date => {
-                                            const dayData = groupedSchedules[date];
-                                            const shifts = dayData.shifts;
-                                            const totals = dayData.totals;
-                                            const dateObj = parseDate(date);
-                                            const isTodayDate = isToday(dateObj);
-
-                                            return (
-                                                <div
-                                                    key={date}
-                                                    id={`date-${date}`}
-                                                    className={`border rounded-lg overflow-hidden ${isTodayDate ? 'border-blue-300 bg-blue-50' : 'border-gray-200'
-                                                        }`}
-                                                >
-                                                    {/* Date Header */}
-                                                    <div className={`px-4 py-3 border-b ${isToday ? 'bg-blue-100 border-blue-200' : 'bg-gray-50 border-gray-200'
-                                                        }`}>
-                                                        <div className="flex justify-between items-center">
-                                                            <div>
-                                                                <h3 className="font-semibold text-lg">
-                                                                    {isTodayDate && '🌟 '}
-                                                                    {format(dateObj, 'EEEE, dd/MM/yyyy')}
-                                                                    {isTodayDate && ' (Today)'}
-                                                                </h3>
-                                                                <p className="text-sm text-gray-600">
-                                                                    {totals.totalShifts} scheduled shift{totals.totalShifts !== 1 ? 's' : ''}
-                                                                </p>
-                                                            </div>
-                                                            <div className="text-right">
-                                                                <div className="text-sm text-gray-600">
-                                                                    📅 {totals.scheduledHours}h scheduled
-                                                                </div>
-                                                                <div className="text-sm font-medium text-green-600">
-                                                                    ✅ {totals.workedHours}h worked
-                                                                </div>
-                                                                <div className="text-xs text-gray-500">
-                                                                    {totals.completedShifts}/{totals.totalShifts} completed
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Shifts for this date */}
-                                                    <div className="divide-y divide-gray-100">
-                                                        {shifts.map((shift, index) => {
-                                                            const statusInfo = getShiftStatus(shift);
-                                                            const canCheckIn = isTodayDate && !shift.checkedInTime;
-                                                            const canCheckOut = shift.checkedInTime && !shift.checkedOutTime;
-
-                                                            return (
-                                                                <div key={shift.id} className="px-4 py-3 hover:bg-gray-50">
-                                                                    <div className="flex justify-between items-center">
-                                                                        <div className="flex-1">
-                                                                            <div className="flex items-center gap-3 mb-2">
-                                                                                <span className="text-lg font-mono font-semibold">
-                                                                                    {shift.startHour} - {shift.endHour}{shift.isContinuation ? ' (cont.)' : ''}{(shift.overnight || shift.isContinuation) && ' 🌙'}
-                                                                                </span>
-                                                                                <span className={`px-2 py-1 rounded text-sm font-medium ${statusInfo.bgColor} ${statusInfo.textColor}`}>
-                                                                                    {statusInfo.label}
-                                                                                </span>
-                                                                                <span className="text-sm text-gray-500">
-                                                                                    ({(() => {
-                                                                                        try {
-                                                                                            const start = parseDateTime(shift.eventDate, shift.startHour);
-                                                                                            let end;
-                                                                                            if (shift.isContinuation) {
-                                                                                                end = parseDateTime(shift.eventDate, shift.endHour);
-                                                                                            } else if (shift.endDate && shift.endDate !== shift.eventDate) {
-                                                                                                const firstDayEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59, 59, 999);
-                                                                                                end = firstDayEnd;
-                                                                                            } else {
-                                                                                                end = parseDateTime(shift.eventDate, shift.endHour);
-                                                                                                if ((shift.overnight || shift.endHour <= shift.startHour) && !shift.isContinuation) {
-                                                                                                    const firstDayEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59, 59, 999);
-                                                                                                    end = firstDayEnd;
-                                                                                                }
-                                                                                            }
-                                                                                            const hrs = differenceInMinutes(end, start) / 60;
-                                                                                            return `${hrs.toFixed(2)}h scheduled`;
-                                                                                        } catch { return '—'; }
-                                                                                    })()})
-                                                                                </span>
-                                                                            </div>
-
-                                                                            <div className="text-gray-700 mb-2">
-                                                                                📝 {shift.eventDescription}
-                                                                            </div>
-
-                                                                            <div className="flex gap-6 text-sm">
-                                                                                <div className="flex items-center gap-1">
-                                                                                    <span>🕐 Check-in:</span>
-                                                                                    <span className={shift.checkedInTime ? 'text-green-600 font-mono' : 'text-gray-400'}>
-                                                                                        {shift.checkedInTime || 'Not recorded'}
-                                                                                    </span>
-                                                                                </div>
-                                                                                <div className="flex items-center gap-1">
-                                                                                    <span>🏁 Check-out:</span>
-                                                                                    <span className={shift.checkedOutTime ? 'text-blue-600 font-mono' : 'text-gray-400'}>
-                                                                                        {shift.checkedOutTime || 'Not recorded'}
-                                                                                    </span>
-                                                                                </div>
-                                                                                <div className="flex items-center gap-1">
-                                                                                    <span>⏱️ Total:</span>
-                                                                                    <span className={shift.totalHoursDay ? 'text-green-600 font-semibold' : 'text-gray-400'}>
-                                                                                        {shift.totalHoursDay ? `${shift.totalHoursDay}h` : '-'}
-                                                                                    </span>
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-
-                                                                        <div className="flex gap-2 ml-4">
-                                                                            {canCheckIn && (
-                                                                                <button
-                                                                                    onClick={() => quickCheckIn(shift)}
-                                                                                    className="btn btn-success btn-sm"
-                                                                                    disabled={isUpdating}
-                                                                                    title="Quick Check-In"
-                                                                                >
-                                                                                    🕐 Entrar
-                                                                                </button>
-                                                                            )}
-                                                                            {canCheckOut && (
-                                                                                <button
-                                                                                    onClick={() => quickCheckOut(shift)}
-                                                                                    className="btn btn-warning btn-sm"
-                                                                                    disabled={isUpdating}
-                                                                                    title="Quick Check-Out"
-                                                                                >
-                                                                                    🏁 Salir
-                                                                                </button>
-                                                                            )}
-                                                                            {!shift.isContinuation && (
-                                                                                <button
-                                                                                    onClick={() => editInOutTime(shift)}
-                                                                                    className="btn btn-primary btn-sm"
-                                                                                    title="Edit Times"
-                                                                                >
-                                                                                    ✏️ Edit
-                                                                                </button>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-
-                                                                    {/* Breaks */}
-                                                                    {index < shifts.length - 1 && (
-                                                                        (() => {
-                                                                            const nextShift = shifts[index + 1];
-                                                                            const currentEnd = new Date(`${shift.eventDate}T${shift.endHour}`);
-                                                                            const nextStart = new Date(`${nextShift.eventDate}T${nextShift.startHour}`);
-                                                                            const breakMinutes = differenceInMinutes(nextStart, currentEnd);
-
-                                                                            if (breakMinutes > 0) {
-                                                                                return (
-                                                                                    <div className="mt-3 pt-2 border-t border-dashed border-gray-300">
-                                                                                        <div className={`text-xs text-center py-1 px-2 rounded ${breakMinutes >= 30
-                                                                                            ? 'bg-green-100 text-green-700'
-                                                                                            : 'bg-orange-100 text-orange-700'
-                                                                                            }`}>
-                                                                                            ⏸️ Break: {Math.floor(breakMinutes / 60)}h {breakMinutes % 60}m
-                                                                                            {breakMinutes < 30 && ' (⚠️ Less than 30 min recommended)'}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                );
-                                                                            }
-                                                                            return null;
-                                                                        })()
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-
-                                                    {/* Daily totals footer */}
-                                                    {totals.totalShifts > 1 && (
-                                                        <div className="px-4 py-3 bg-gray-50 border-t">
-                                                            <div className="flex justify-between items-center text-sm">
-                                                                <div className="text-gray-600">
-                                                                    📊 Day Total ({totals.totalShifts} shifts):
-                                                                </div>
-                                                                <div className="flex gap-4 font-medium">
-                                                                    <span className="text-blue-600">
-                                                                        📅 {totals.scheduledHours}h scheduled
-                                                                    </span>
-                                                                    <span className="text-green-600">
-                                                                        ✅ {totals.workedHours}h worked
-                                                                    </span>
-                                                                    <span className={totals.workedHours > totals.scheduledHours ? 'text-orange-600' : 'text-gray-600'}>
-                                                                        📈 {totals.scheduledHours > 0 ?
-                                                                            `${((totals.workedHours / totals.scheduledHours) * 100).toFixed(1)}%` :
-                                                                            '0%'} efficiency
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-
-                                    {Object.keys(groupedSchedules).length === 0 && (
-                                        <div className="text-center py-8 text-gray-500">
-                                            📅 No scheduled shifts
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
+                        <ScheduleList
+                            groupedSchedules={groupedSchedules}
+                            scheduleData={scheduleData}
+                            quickCheckIn={quickCheckIn}
+                            quickCheckOut={quickCheckOut}
+                            editInOutTime={editInOutTime}
+                            isUpdating={isUpdating}
+                        />
                     )}
 
                     {currentView === 'calendar' && (
-                        <div className="card animate-slide-in">
-                            <div className="card-header">
-                                <h2 className="card-title">📅 Calendar View</h2>
-                            </div>
-
-                            {/* Calendar Legend */}
-                            <div className="calendar-legend mb-4">
-                                <h3 className="legend-title">Schedule Status</h3>
-                                <div className="legend-items">
-                                    <div className="legend-item">
-                                        <div className="legend-color" style={{ backgroundColor: '#10b981' }}></div>
-                                        <span>Completed</span>
-                                    </div>
-                                    <div className="legend-item">
-                                        <div className="legend-color" style={{ backgroundColor: '#f59e0b' }}></div>
-                                        <span>In Progress</span>
-                                    </div>
-                                    <div className="legend-item">
-                                        <div className="legend-color" style={{ backgroundColor: '#2563eb' }}></div>
-                                        <span>Scheduled</span>
-                                    </div>
-                                    <div className="legend-item">
-                                        <div className="legend-color" style={{ backgroundColor: '#ef4444' }}></div>
-                                        <span>Missed</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Create Shift Instructions */}
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                                <div className="flex items-center gap-2 text-blue-800">
-                                    <span className="text-lg">✨</span>
-                                    <span className="font-medium">Quick Shift Creation:</span>
-                                    <span className="text-sm">Click and drag on the calendar to create a new shift</span>
-                                </div>
-                            </div>
-
-                            <Calendar
-                                localizer={localizer}
-                                events={calendarEvents}
-                                startAccessor="start"
-                                endAccessor="end"
-                                style={{ height: 600 }}
-                                eventPropGetter={eventStyleGetter}
-                                views={['month', 'week', 'day', 'agenda']}
-                                defaultView="week"
-                                step={15}
-                                timeslots={4}
-                                min={new Date(0, 0, 0, 0, 0, 0)}        // 00:00
-                                max={new Date(0, 0, 0, 23, 59, 0)}      // 23:59
-                                selectable={true}
-                                onSelectSlot={handleSelectSlot}
-                                formats={{
-                                    timeGutterFormat: 'HH:mm',
-                                    eventTimeRangeFormat: ({ start, end }) =>
-                                        `${format(start, 'HH:mm')} - ${format(end, 'HH:mm')}`
-                                }}
-                                onSelectEvent={(event) => {
-                                    const schedule = scheduleData.find(s => s.id === event.id);
-                                    if (schedule) {
-                                        handleEventClick(schedule);
-                                    }
-                                }}
-                            />
-
-                        </div>
+                        <CalendarPanel
+                            calendarEvents={calendarEvents}
+                            eventStyleGetter={eventStyleGetter}
+                            handleSelectSlot={handleSelectSlot}
+                            handleEventClick={handleEventClick}
+                            scheduleData={scheduleData}
+                        />
                     )}
                 </>
             )}
@@ -1183,14 +900,14 @@ function UserSchedule() {
                     }}>
                         <div className="modal-header">
                             <h2 className="modal-title">
-                                🕐 Edit Time Entry
+                                 Edit Time Entry
                             </h2>
                             <button
                                 onClick={closeMenuVisibility}
                                 className="modal-close"
                                 disabled={isUpdating}
                             >
-                                ✕
+                                
                             </button>
                         </div>
 
@@ -1204,7 +921,7 @@ function UserSchedule() {
                             <div className="detail-item">
                                 <div className="detail-label">Scheduled Time</div>
                                 <div className="detail-value">
-                                    {eventToEdit.startHour} - {eventToEdit.endHour} {overnightEdit && '🌙'}
+                                    {eventToEdit.startHour} - {eventToEdit.endHour} {overnightEdit && '(overnight)'}
                                 </div>
                             </div>
                             {overnightEdit && (
@@ -1222,7 +939,7 @@ function UserSchedule() {
                         <div className="space-y-4">
                             <div className="form-group">
                                 <label className="form-label">
-                                    📝 Shift Description
+                                     Shift Description
                                 </label>
                                 <input
                                     type='text'
@@ -1236,7 +953,7 @@ function UserSchedule() {
 
                             <div className="form-group">
                                 <label className="form-label">
-                                    🕒 Start Time
+                                     Start Time
                                 </label>
                                 <input
                                     type='time'
@@ -1249,7 +966,7 @@ function UserSchedule() {
 
                             <div className="form-group">
                                 <label className="form-label">
-                                    🕘 End Time
+                                     End Time
                                 </label>
                                 <input
                                     type='time'
@@ -1269,7 +986,7 @@ function UserSchedule() {
                                     onChange={(e) => setOvernightEdit(e.target.checked)}
                                     disabled={isUpdating}
                                 />
-                                <label htmlFor="overnightEdit" className="form-label !mb-0">🌙 Overnight (ends next day)</label>
+                                <label htmlFor="overnightEdit" className="form-label !mb-0"> Overnight (ends next day)</label>
                             </div>
 
                             {startHour && endHour && (
@@ -1284,7 +1001,7 @@ function UserSchedule() {
                                         color: '#1565c0',
                                         fontWeight: '500'
                                     }}>
-                                        ⏰ Scheduled Duration: {
+                                         Scheduled Duration: {
                                             (() => {
                                                 try {
                                                     const startDate = new Date(`${eventToEdit.eventDate}T${startHour}`);
@@ -1306,7 +1023,7 @@ function UserSchedule() {
 
                             <div className="form-group">
                                 <label className="form-label">
-                                    �🕐 Check-In Time
+                                     Check-In Time
                                 </label>
                                 <input
                                     type='time'
@@ -1319,7 +1036,7 @@ function UserSchedule() {
 
                             <div className="form-group">
                                 <label className="form-label">
-                                    🏁 Check-Out Time
+                                     Check-Out Time
                                 </label>
                                 <input
                                     type='time'
@@ -1339,7 +1056,7 @@ function UserSchedule() {
                                     onChange={(e) => setCheckOutOvernightEdit(e.target.checked)}
                                     disabled={isUpdating}
                                 />
-                                <label htmlFor="checkOutOvernightEdit" className="form-label !mb-0">🌙 Check-Out al día siguiente</label>
+                                <label htmlFor="checkOutOvernightEdit" className="form-label !mb-0"> Check-Out next day</label>
                             </div>
 
                             {timeCheckIn && timeCheckOut && (
@@ -1354,7 +1071,7 @@ function UserSchedule() {
                                         color: '#1565c0',
                                         fontWeight: '500'
                                     }}>
-                                        📊 Total Hours: {
+                                         Total Hours: {
                                             (() => {
                                                 try {
                                                     let checkInDate = new Date(`${eventToEdit.eventDate}T${timeCheckIn}`);
@@ -1388,7 +1105,7 @@ function UserSchedule() {
                                         Updating...
                                     </>
                                 ) : (
-                                    '📝 Update Description'
+                                    ' Update Description'
                                 )}
                             </button>
                             <button
@@ -1402,7 +1119,7 @@ function UserSchedule() {
                                         Updating...
                                     </>
                                 ) : (
-                                    '⏰ Update Times'
+                                    ' Update Times'
                                 )}
                             </button>
                         </div>
@@ -1419,7 +1136,7 @@ function UserSchedule() {
                                         Updating...
                                     </>
                                 ) : (
-                                    '🕐 Update Check-In'
+                                    ' Update Check-In'
                                 )}
                             </button>
                             <button
@@ -1433,7 +1150,7 @@ function UserSchedule() {
                                         Updating...
                                     </>
                                 ) : (
-                                    '🏁 Update Check-Out'
+                                    ' Update Check-Out'
                                 )}
                             </button>
                             <button
@@ -1441,7 +1158,7 @@ function UserSchedule() {
                                 className="btn btn-secondary"
                                 disabled={isUpdating}
                             >
-                                ❌ Cancel
+                                 Cancel
                             </button>
                         </div>
                     </div>
@@ -1454,7 +1171,7 @@ function UserSchedule() {
                     <div className="modal">
                         <div className="modal-header">
                             <h2 className="modal-title">
-                                ⚙️ Shift Options
+                                 Shift Options
                             </h2>
                             <button
                                 onClick={() => {
@@ -1463,7 +1180,7 @@ function UserSchedule() {
                                 }}
                                 className="modal-close"
                             >
-                                ✕
+                                
                             </button>
                         </div>
 
@@ -1503,13 +1220,13 @@ function UserSchedule() {
                                 onClick={() => editShiftFromCalendar(selectedShift)}
                                 className="btn btn-primary flex-1"
                             >
-                                ✏️ Edit Shift
+                                 Edit Shift
                             </button>
                             <button
                                 onClick={() => deleteShift(selectedShift)}
                                 className="btn btn-danger flex-1"
                             >
-                                🗑️ Delete Shift
+                                 Delete Shift
                             </button>
                         </div>
 
@@ -1521,7 +1238,7 @@ function UserSchedule() {
                                 }}
                                 className="btn btn-secondary flex-1"
                             >
-                                ❌ Cancel
+                                 Cancel
                             </button>
                         </div>
                     </div>
@@ -1534,7 +1251,7 @@ function UserSchedule() {
                     <div className="modal">
                         <div className="modal-header">
                             <h2 className="modal-title">
-                                ➕ Create New Shift
+                                 Create New Shift
                             </h2>
                             <button
                                 onClick={() => {
@@ -1545,7 +1262,7 @@ function UserSchedule() {
                                 className="modal-close"
                                 disabled={isUpdating}
                             >
-                                ✕
+                                
                             </button>
                         </div>
 
@@ -1572,7 +1289,7 @@ function UserSchedule() {
 
                         <div className="form-group mb-6">
                             <label className="form-label">
-                                📝 Shift Description
+                                 Shift Description
                             </label>
                             <input
                                 type='text'
@@ -1597,7 +1314,7 @@ function UserSchedule() {
                                         Creating...
                                     </>
                                 ) : (
-                                    '✅ Create Shift'
+                                    ' Create Shift'
                                 )}
                             </button>
                             <button
@@ -1609,7 +1326,7 @@ function UserSchedule() {
                                 className="btn btn-secondary"
                                 disabled={isUpdating}
                             >
-                                ❌ Cancelar
+                                     Cancel
                             </button>
                         </div>
                     </div>
@@ -1623,7 +1340,7 @@ function UserSchedule() {
                         onClick={() => navigate('/schedulizer')}
                         className="btn btn-secondary"
                     >
-                        ← Back to Schedule Management
+                         Back to Schedule Management
                     </button>
                     <div className="text-sm text-gray-500">
                         Total Entries: {scheduleData.length}

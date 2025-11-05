@@ -6,9 +6,9 @@ function UserScheduleHeader({ currentUserName, currentUserCategory, currentTime,
         <div className="card mb-6">
             <div className="flex justify-between items-center mb-4">
                 <div>
-                    <h1 className="card-title">📅 Employee Schedule - {currentUserName}</h1>
+                    <h1 className="card-title">Employee Schedule - {currentUserName}</h1>
                     <p className="card-subtitle">
-                        {currentUserCategory && `${currentUserCategory} • `}Track your work schedule and time entries
+                        {currentUserCategory && `${currentUserCategory}  `}Track your work schedule and time entries
                     </p>
                 </div>
                 <div className="text-right">
@@ -26,13 +26,13 @@ function UserScheduleHeader({ currentUserName, currentUserCategory, currentTime,
                     onClick={() => setCurrentView('table')}
                     className={`btn ${currentView === 'table' ? 'btn-primary' : 'btn-secondary'}`}
                 >
-                    📋 Table View
+                     Table View
                 </button>
                 <button
                     onClick={() => setCurrentView('calendar')}
                     className={`btn ${currentView === 'calendar' ? 'btn-primary' : 'btn-secondary'}`}
                 >
-                    📅 Calendar View
+                    Calendar View
                 </button>
             </div>
         </div>

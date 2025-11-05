@@ -133,14 +133,14 @@ function CreateEmployeeForm() {
         isActive: true,
       });
 
-      toast.success('✅ User created successfully', {
+      toast.success(' User created successfully', {
         position: 'top-right',
       });
 
       resetForm();
     } catch (error) {
       console.error('Error creating user:', error);
-      toast.error(`❌ Error creating user: ${error.message}`, {
+      toast.error(` Error creating user: ${error.message}`, {
         position: 'top-right',
       });
     } finally {
@@ -152,7 +152,7 @@ function CreateEmployeeForm() {
   return (
     <div className="card mt-6">
       <div className="card-header">
-        <h2 className="card-title">👤 Create New User / Employee</h2>
+        <h2 className="card-title"> Create New User / Employee</h2>
         <p className="card-subtitle">
           This will create a login account (email / temporary password)
           and register this employee in the system.
@@ -305,7 +305,7 @@ function CreateEmployeeForm() {
             className="btn btn-primary flex-1"
             disabled={isSubmitting}
           >
-            {isSubmitting ? 'Creating...' : '➕ Create User'}
+            {isSubmitting ? 'Creating...' : 'Create User'}
           </button>
 
           <button
@@ -323,7 +323,7 @@ function CreateEmployeeForm() {
             className="btn btn-success flex-1"
             disabled={isSubmitting}
           >
-            📋 View All Employees & Schedules
+             View All Employees & Schedules
           </button>
         </div>
       </form>

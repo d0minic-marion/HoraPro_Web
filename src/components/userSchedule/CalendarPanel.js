@@ -9,7 +9,7 @@ function CalendarPanel({ calendarEvents, eventStyleGetter, handleSelectSlot, han
     return (
         <div className="card animate-slide-in">
             <div className="card-header">
-                <h2 className="card-title">📅 Calendar View</h2>
+                <h2 className="card-title">Calendar View</h2>
             </div>
 
             <div className="calendar-legend mb-4">
@@ -24,7 +24,7 @@ function CalendarPanel({ calendarEvents, eventStyleGetter, handleSelectSlot, han
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
                 <div className="flex items-center gap-2 text-blue-800">
-                    <span className="text-lg">✨</span>
+                    <span className="text-lg">i</span>
                     <span className="font-medium">Quick Shift Creation:</span>
                     <span className="text-sm">Click and drag on the calendar to create a new shift</span>
                 </div>

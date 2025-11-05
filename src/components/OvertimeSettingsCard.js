@@ -97,7 +97,7 @@ function OvertimeSettingsCard() {
   return (
     <div className="card">
       <div className="card-header">
-        <h1 className="card-title">⚙️ Overtime Settings (Global)</h1>
+        <h1 className="card-title"> Overtime Settings (Global)</h1>
         <p className="card-subtitle">
           These rules affect all users for weekly earnings & overtime splits
         </p>
@@ -146,9 +146,9 @@ function OvertimeSettingsCard() {
           <div className="p-2 border rounded bg-gray-50 text-sm text-gray-700">
             {otLoading
               ? 'Loading...'
-              : otUpdatedAt
-              ? otUpdatedAt.toLocaleString()
-              : 'No data'}
+              : (otUpdatedAt
+                ? (otUpdatedAt.toDate ? otUpdatedAt.toDate().toLocaleString() : otUpdatedAt.toLocaleString())
+                : 'No data')}
           </div>
         </div>
 
@@ -159,7 +159,7 @@ function OvertimeSettingsCard() {
             className="btn btn-primary"
             disabled={otSaving || otLoading}
           >
-            {otSaving ? 'Saving...' : '💾 Save Overtime Rules'}
+            {otSaving ? 'Saving...' : ' Save Overtime Rules'}
           </button>
         </div>
       </form>
