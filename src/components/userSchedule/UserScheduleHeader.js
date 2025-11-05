@@ -1,7 +1,7 @@
 import React from 'react'
 import { format } from 'date-fns'
 
-function UserScheduleHeader({ currentUserName, currentUserCategory, currentTime, currentView, setCurrentView }) {
+function UserScheduleHeader({ currentUserName, currentUserCategory, currentTime, currentView, setCurrentView, onEditProfile }) {
     return (
         <div className="card mb-6">
             <div className="flex justify-between items-center mb-4">
@@ -26,13 +26,19 @@ function UserScheduleHeader({ currentUserName, currentUserCategory, currentTime,
                     onClick={() => setCurrentView('table')}
                     className={`btn ${currentView === 'table' ? 'btn-primary' : 'btn-secondary'}`}
                 >
-                     Table View
+                    Table View
                 </button>
                 <button
                     onClick={() => setCurrentView('calendar')}
                     className={`btn ${currentView === 'calendar' ? 'btn-primary' : 'btn-secondary'}`}
                 >
                     Calendar View
+                </button>
+                <button
+                    onClick={() => onEditProfile && onEditProfile()}
+                    className="btn btn-secondary"
+                >
+                    Edit Profile
                 </button>
             </div>
         </div>

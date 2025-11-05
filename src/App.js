@@ -8,6 +8,7 @@ import { BrowserRouter, Route, Routes, Link, useLocation } from 'react-router-do
 import CreateUserPage from './pages/CreateUserPage';
 import AddSchedule from './components/AddSchdule';
 import UserSchedule from './components/UserSchedule';
+import EditProfilePage from './pages/EditProfilePage';
 
 // Navigation bar (kept same visual style)
 function Navigation() {
@@ -33,6 +34,13 @@ function Navigation() {
             className={`nav-link ${location.pathname === '/schedulizer' ? 'nav-link-active' : ''}`}
           >
             Scheduler
+          </Link>
+
+          <Link
+            to="/schedulizer?showInactive=true"
+            className={`nav-link ${location.pathname === '/schedulizer' && location.search.includes('showInactive=true') ? 'nav-link-active' : ''}`}
+          >
+            Inactive Employees
           </Link>
 
           <Link
@@ -63,6 +71,8 @@ function App() {
 
             {/* Individual user schedule page */}
             <Route path="/userschedule" element={<UserSchedule />} />
+            {/* Edit profile page (no nav link; direct route only) */}
+            <Route path="/editprofile/:userId" element={<EditProfilePage />} />
           </Routes>
         </div>
 

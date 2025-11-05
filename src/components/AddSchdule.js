@@ -8,9 +8,10 @@ import {
     query,
     orderBy,
     doc,
+    setDoc,
     Timestamp
 } from 'firebase/firestore';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
@@ -41,6 +42,7 @@ const localizer = momentLocalizer(moment);
 
 function AddSchedule() {
     const navigate = useNavigate()
+    const location = useLocation()
 
     const [colUsersData, setColUsersData] = useState([])
     const [loading, setLoading] = useState(true)
@@ -63,6 +65,32 @@ function AddSchedule() {
 
     // Statistics state
     const [weeklyStats, setWeeklyStats] = useState({})
+    // Listing filter
+    const [showInactive, setShowInactive] = useState(false)
+
+    // Persist showInactive in localStorage
+    useEffect(() => {
+        try {
+            // URL param has priority on first load
+            const params = new URLSearchParams(location.search || '');
+            const q = params.get('showInactive');
+            if (q === 'true' || q === '1') {
+                setShowInactive(true);
+                return;
+            }
+            const saved = localStorage.getItem('sched_showInactive');
+            if (saved !== null) {
+                setShowInactive(saved === 'true');
+            }
+        } catch {}
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('sched_showInactive', showInactive ? 'true' : 'false');
+        } catch {}
+    }, [showInactive])
 
     const shiftTypes = [
         { value: 'regular', label: 'Regular Shift', color: '#2563eb' },
@@ -430,6 +458,10 @@ function AddSchedule() {
 
     const handleSelectSlot = ({ start }) => {
         if (selectedUser) {
+            if (selectedUser.isActive === false) {
+                toast.error('This user is inactive. Activate the user to create new shifts.', { position: 'top-right' });
+                return;
+            }
             const dateStr = format(start, 'yyyy-MM-dd');
             const timeStr = format(start, 'HH:mm');
             
@@ -550,13 +582,14 @@ function AddSchedule() {
                             <select 
                                 value={selectedUser?.id || ''}
                                 onChange={(e) => {
-                                    const user = colUsersData.find(u => u.id === e.target.value);
+                                    const pool = showInactive ? colUsersData : colUsersData.filter(u => u.isActive !== false);
+                                    const user = pool.find(u => u.id === e.target.value);
                                     setSelectedUser(user || null);
                                 }}
                                 className="form-select"
                             >
                                 <option value="">Click on the calendar to create a schedule for...</option>
-                                {colUsersData.map((user) => (
+                                {(showInactive ? colUsersData : colUsersData.filter(u => u.isActive !== false)).map((user) => (
                                     <option key={user.id} value={user.id}>
                                         {user.firstName} {user.lastName} ({user.category})
                                     </option>
@@ -605,7 +638,9 @@ function AddSchedule() {
                             </p>
                         </div>
                         
-                        {colUsersData.length === 0 ? (
+                        {(() => {
+                            const usersToShow = showInactive ? colUsersData : colUsersData.filter(u => u.isActive !== false);
+                            return usersToShow.length === 0 ? (
                             <div className="text-center py-8">
                                 <p className="text-gray-500 mb-4">No employees found</p>
                                 <button 
@@ -617,6 +652,17 @@ function AddSchedule() {
                             </div>
                         ) : (
                             <div className="table-container">
+                                <div className="flex items-center justify-end mb-3">
+                                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                                        <input
+                                            type="checkbox"
+                                            className="form-checkbox"
+                                            checked={showInactive}
+                                            onChange={(e) => setShowInactive(e.target.checked)}
+                                        />
+                                        Show inactive
+                                    </label>
+                                </div>
                                 <table className="table">
                                     <thead>
                                         <tr>
@@ -629,7 +675,7 @@ function AddSchedule() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {colUsersData.map((user) => {
+                                        {usersToShow.map((user) => {
                                             const stats = weeklyStats[user.id] || { weeklyHours: 0, totalShifts: 0, upcomingShifts: 0 };
                                             const dailyData = userDailySchedules[user.id] || {};
                                             const totalDays = Object.keys(dailyData).length;
@@ -657,6 +703,9 @@ function AddSchedule() {
                                                         <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm">
                                                             {user.category}
                                                         </span>
+                                                        {user.isActive === false && (
+                                                            <span className="ml-2 px-2 py-1 bg-red-100 text-red-800 rounded text-sm">Inactive</span>
+                                                        )}
                                                     </td>
                                                     <td>
                                                         <span className="font-semibold text-green-600">
@@ -688,16 +737,40 @@ function AddSchedule() {
                                                                 onClick={() => makeSchdFormVisible(user.id, `${user.firstName} ${user.lastName}`)}
                                                                 className="btn btn-success btn-sm"
                                                                 title="Create New Shift"
+                                                                disabled={user.isActive === false}
                                                             >
-                                                                 Shift
+                                                                 Create Shift
                                                             </button>
                                                             <button
                                                                 onClick={() => navigateScheduleUser(user)}
                                                                 className="btn btn-primary btn-sm"
                                                                 title="View User Schedule"
                                                             >
-                                                                 View
+                                                             Schedule View
                                                             </button>
+                                                            <button
+                                                                onClick={() => navigate(`/editprofile/${user.id}`, { state: { backTo: '/schedulizer' } })}
+                                                                className="btn btn-info btn-sm"
+                                                                title="Edit Profile"
+                                                            >
+                                                                 Edit Profile
+                                                            </button>
+                                                            {showInactive && user.isActive === false && (
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        try {
+                                                                            await setDoc(doc(dbFirestore, 'users', user.id), { isActive: true }, { merge: true });
+                                                                            toast.success('Employee activated');
+                                                                        } catch (e) {
+                                                                            toast.error('Failed to activate employee');
+                                                                        }
+                                                                    }}
+                                                                    className="btn btn-warning btn-sm"
+                                                                    title="Activate Employee"
+                                                                >
+                                                                     Activate
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -706,7 +779,8 @@ function AddSchedule() {
                                     </tbody>
                                 </table>
                             </div>
-                        )}
+                        )
+                        })()}
 
                         <div className="mt-6">
                             <button 

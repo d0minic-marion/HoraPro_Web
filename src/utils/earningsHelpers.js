@@ -58,6 +58,9 @@ export async function syncWeeklyEarningsForUserWeek({
     const OVERTIME_THRESHOLD_WEEK = 40;
     const OVERTIME_EXTRA_PERCENT  = 50;
     const OVERTIME_MULTIPLIER     = 1.5;
+
+    // Load wage history once (if any), then select per day.
+    const historyRates = await loadWageHistory(userId);
     let runningTotalRegularEligible = 0;
 
     cursor = new Date(weekStartDate);
@@ -78,7 +81,11 @@ export async function syncWeeklyEarningsForUserWeek({
             }
             runningTotalRegularEligible += regularHoursForDay;
         }
-        const wage = typeof userHourlyWage === 'number' ? userHourlyWage : 0;
+        const wage = getRateForDate({
+            dateStr: dStr,
+            history: historyRates,
+            fallback: typeof userHourlyWage === 'number' ? userHourlyWage : 0,
+        });
         const regularPay  = regularHoursForDay * wage;
         const overtimePay = overtimeHoursForDay * wage * OVERTIME_MULTIPLIER;
         const dayEarnings = Number((regularPay + overtimePay).toFixed(2));
@@ -106,4 +113,40 @@ export async function syncWeeklyEarningsForUserWeek({
         await setDoc(earningsDocRef, recordData, { merge: true });
         cursor = addDays(cursor, 1);
     }
+}
+
+/**
+ * Load wage history entries for a user (ordered by effectiveFrom asc).
+ * Returns array of { rate:number, effectiveFrom:'YYYY-MM-DD' }.
+ */
+export async function loadWageHistory(userId) {
+    try {
+        const histCol = collection(dbFirestore, 'users', userId, 'WageHistory');
+        const q = query(histCol, orderBy('effectiveFrom', 'asc'));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => ({
+            rate: typeof d.data().rate === 'number' ? d.data().rate : null,
+            effectiveFrom: d.data().effectiveFrom,
+        })).filter(e => e.rate != null && typeof e.effectiveFrom === 'string');
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Given a date string YYYY-MM-DD, select the latest rate whose effectiveFrom <= date.
+ * If not found, use fallback.
+ */
+export function getRateForDate({ dateStr, history, fallback }) {
+    if (!Array.isArray(history) || history.length === 0) return fallback;
+    let chosen = null;
+    for (const h of history) {
+        if (!h || !h.effectiveFrom || typeof h.rate !== 'number') continue;
+        if (h.effectiveFrom <= dateStr) {
+            chosen = h.rate;
+        } else {
+            break;
+        }
+    }
+    return (chosen != null) ? chosen : fallback;
 }

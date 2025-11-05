@@ -24,7 +24,7 @@ import UserScheduleHeader from './userSchedule/UserScheduleHeader';
 import WeeklyStatsCard from './userSchedule/WeeklyStatsCard';
 import ScheduleList from './userSchedule/ScheduleList';
 import CalendarPanel from './userSchedule/CalendarPanel';
-import { syncWeeklyEarningsForUserWeek } from '../utils/earningsHelpers';
+import { syncWeeklyEarningsForUserWeek, loadWageHistory, getRateForDate } from '../utils/earningsHelpers';
 import {
     groupShiftsByDate,
     
@@ -271,100 +271,104 @@ setLoading(false)
     useEffect(() => {
         if (!userId || !userData || !userData.hourlyWage) return;
         if (!groupedSchedules || Object.keys(groupedSchedules).length === 0) return;
+        (async () => {
+            const fallbackRate = parseFloat(userData.hourlyWage) || 0;
+            if (fallbackRate <= 0) return;
 
-        const hourlyRate = parseFloat(userData.hourlyWage) || 0;
-        if (hourlyRate <= 0) return;
+            const threshold = parseFloat(overtimeSettings.thresholdHours) || 9999;
+            const overtimePercent = parseFloat(overtimeSettings.overtimePercent) || 0;
+            const overtimeMultiplier = 1 + (overtimePercent / 100);
 
-        const threshold = parseFloat(overtimeSettings.thresholdHours) || 9999;
-        const overtimePercent = parseFloat(overtimeSettings.overtimePercent) || 0;
-        const overtimeMultiplier = 1 + (overtimePercent / 100);
+            const newCache = { ...earningsCache };
+            const writes = [];
 
-        const newCache = { ...earningsCache };
-        const writes = [];
+            const allDates = Object.keys(groupedSchedules).sort();
+            const historyRates = await loadWageHistory(userId);
 
-        const allDates = Object.keys(groupedSchedules).sort();
-
-        const weekMap = {};
-        allDates.forEach(dateKey => {
-            const [y, m, d] = dateKey.split('-').map(Number);
-            const dateObj = new Date(y, m - 1, d);
-            const tmp = new Date(dateObj.getTime());
-            const day = (tmp.getDay() + 6) % 7; // Monday=0 ... Sunday=6
-            tmp.setDate(tmp.getDate() - day); // week start (Monday)
-            const wkYear = tmp.getFullYear();
-            const jan1 = new Date(wkYear, 0, 1);
-            const daysDiff = Math.floor((tmp - jan1) / (24 * 3600 * 1000));
-            const weekNum = Math.floor(daysDiff / 7) + 1;
-            const weekKey = `${wkYear}-W${String(weekNum).padStart(2, '0')}`;
-            if (!weekMap[weekKey]) weekMap[weekKey] = [];
-            weekMap[weekKey].push(dateKey);
-        });
-
-        Object.keys(weekMap).forEach(weekKey => {
-            let cumulativeWeekHours = 0;
-            weekMap[weekKey].forEach(dateKey => {
-                const dayGroup = groupedSchedules[dateKey];
-                if (!dayGroup?.totals) return;
-                const worked = parseFloat(dayGroup.totals.workedHours || 0);
-                const scheduledHours = +(parseFloat(dayGroup.totals.scheduledHours || 0).toFixed(2));
-
-                if (scheduledHours <= 0 && worked <= 0) return;
-
-                let regularHours = 0;
-                let overtimeHours = 0;
-                if (worked > 0) {
-                    if (cumulativeWeekHours >= threshold) {
-                        overtimeHours = worked;
-                    } else if (cumulativeWeekHours + worked <= threshold) {
-                        regularHours = worked;
-                    } else {
-                        regularHours = threshold - cumulativeWeekHours;
-                        overtimeHours = worked - regularHours;
-                    }
-                    cumulativeWeekHours += worked;
-                }
-
-                const regularPay = regularHours * hourlyRate;
-                const overtimePay = overtimeHours * hourlyRate * overtimeMultiplier;
-                const dayEarnings = worked > 0 ? +(regularPay + overtimePay).toFixed(2) : 0;
-                const totalHours = +worked.toFixed(2);
-
-                const cacheEntry = earningsCache[dateKey];
-                const signature = `${totalHours}|${dayEarnings}|${regularHours.toFixed(2)}|${overtimeHours.toFixed(2)}|${scheduledHours.toFixed(2)}`;
-                if (cacheEntry === signature) {
-                    return;
-                }
-
-                const recRef = doc(dbFirestore, 'users', userId, 'RecordEarnings', dateKey);
-                writes.push(
-                    setDoc(recRef, {
-                        date: dateKey,
-                        totalHours: totalHours,
-                        scheduledHours: scheduledHours,
-                        regularHours: +regularHours.toFixed(2),
-                        overtimeHours: +overtimeHours.toFixed(2),
-                        overtimeThreshold: threshold,
-                        overtimePercent: overtimePercent,
-                        dayEarnings: dayEarnings,
-                        hourlyWageSnapshot: hourlyRate,
-                        overtimeApplied: overtimeHours > 0,
-                        noWorkRecorded: worked <= 0,
-                        updatedAt: serverTimestamp()
-                    }, { merge: true })
-                );
-                newCache[dateKey] = signature;
+            const weekMap = {};
+            allDates.forEach(dateKey => {
+                const [y, m, d] = dateKey.split('-').map(Number);
+                const dateObj = new Date(y, m - 1, d);
+                const tmp = new Date(dateObj.getTime());
+                const day = (tmp.getDay() + 6) % 7; // Monday=0 ... Sunday=6
+                tmp.setDate(tmp.getDate() - day); // week start (Monday)
+                const wkYear = tmp.getFullYear();
+                const jan1 = new Date(wkYear, 0, 1);
+                const daysDiff = Math.floor((tmp - jan1) / (24 * 3600 * 1000));
+                const weekNum = Math.floor(daysDiff / 7) + 1;
+                const weekKey = `${wkYear}-W${String(weekNum).padStart(2, '0')}`;
+                if (!weekMap[weekKey]) weekMap[weekKey] = [];
+                weekMap[weekKey].push(dateKey);
             });
-        });
 
-        if (writes.length > 0) {
-            Promise.all(writes)
-                .then(() => {
-                    setEarningsCache(newCache);
-                })
-                .catch(err => {
-                    console.error('Error updating RecordEarnings:', err);
+            Object.keys(weekMap).forEach(weekKey => {
+                let cumulativeWeekHours = 0;
+                weekMap[weekKey].forEach(dateKey => {
+                    const dayGroup = groupedSchedules[dateKey];
+                    if (!dayGroup?.totals) return;
+                    const worked = parseFloat(dayGroup.totals.workedHours || 0);
+                    const scheduledHours = +(parseFloat(dayGroup.totals.scheduledHours || 0).toFixed(2));
+
+                    if (scheduledHours <= 0 && worked <= 0) return;
+
+                    const wage = getRateForDate({ dateStr: dateKey, history: historyRates, fallback: fallbackRate });
+
+                    let regularHours = 0;
+                    let overtimeHours = 0;
+                    if (worked > 0) {
+                        if (cumulativeWeekHours >= threshold) {
+                            overtimeHours = worked;
+                        } else if (cumulativeWeekHours + worked <= threshold) {
+                            regularHours = worked;
+                        } else {
+                            regularHours = threshold - cumulativeWeekHours;
+                            overtimeHours = worked - regularHours;
+                        }
+                        cumulativeWeekHours += worked;
+                    }
+
+                    const regularPay = regularHours * wage;
+                    const overtimePay = overtimeHours * wage * overtimeMultiplier;
+                    const dayEarnings = worked > 0 ? +(regularPay + overtimePay).toFixed(2) : 0;
+                    const totalHours = +worked.toFixed(2);
+
+                    const cacheEntry = earningsCache[dateKey];
+                    const signature = `${totalHours}|${dayEarnings}|${regularHours.toFixed(2)}|${overtimeHours.toFixed(2)}|${scheduledHours.toFixed(2)}|${wage}`;
+                    if (cacheEntry === signature) {
+                        return;
+                    }
+
+                    const recRef = doc(dbFirestore, 'users', userId, 'RecordEarnings', dateKey);
+                    writes.push(
+                        setDoc(recRef, {
+                            date: dateKey,
+                            totalHours: totalHours,
+                            scheduledHours: scheduledHours,
+                            regularHours: +regularHours.toFixed(2),
+                            overtimeHours: +overtimeHours.toFixed(2),
+                            overtimeThreshold: threshold,
+                            overtimePercent: overtimePercent,
+                            dayEarnings: dayEarnings,
+                            hourlyWageSnapshot: wage,
+                            overtimeApplied: overtimeHours > 0,
+                            noWorkRecorded: worked <= 0,
+                            updatedAt: serverTimestamp()
+                        }, { merge: true })
+                    );
+                    newCache[dateKey] = signature;
                 });
-        }
+            });
+
+            if (writes.length > 0) {
+                Promise.all(writes)
+                    .then(() => {
+                        setEarningsCache(newCache);
+                    })
+                    .catch(err => {
+                        console.error('Error updating RecordEarnings:', err);
+                    });
+            }
+        })();
     }, [groupedSchedules, userId, userData, earningsCache, overtimeSettings])
 
     //
@@ -468,6 +472,10 @@ setLoading(false)
     }
 
     async function checkInTime(reg) {
+        if (userData && userData.isActive === false) {
+            toast.error('This user is inactive. Check-in is disabled.');
+            return;
+        }
         if (!reg || !reg.id || !timeCheckIn) {
             toast.error("Please select a valid time for check-in");
             return;
@@ -505,6 +513,10 @@ setLoading(false)
     }
 
     async function checkOutTime(reg) {
+        if (userData && userData.isActive === false) {
+            toast.error('This user is inactive. Check-out is disabled.');
+            return;
+        }
         if (!reg || !reg.id || !timeCheckOut) {
             toast.error("Please select a valid time for check-out");
             return;
@@ -837,6 +849,7 @@ setLoading(false)
                 currentTime={currentTime}
                 currentView={currentView}
                 setCurrentView={setCurrentView}
+                onEditProfile={() => navigate(`/editprofile/${userId}`, { state: { backTo: '/userschedule' } })}
             />
 
             {/* Overtime Threshold Alert */}
@@ -892,12 +905,12 @@ setLoading(false)
 
             {/* Edit Time Modal */}
             {editMenuVisibility && eventToEdit && (
-                <div className="modal-overlay" >
+                <div className="modal-overlay" onClick={(e) => { if (!isUpdating && e.currentTarget === e.target) { closeMenuVisibility(e); } }}>
                     <div className="modal" style={{
                         width: window.innerWidth > 768 ? "90%" : "95%",
                         maxWidth: "1400px",
                         minWidth: "500px"
-                    }}>
+                    }} onClick={(e) => { e.stopPropagation(); }}>
                         <div className="modal-header">
                             <h2 className="modal-title">
                                  Edit Time Entry
@@ -907,7 +920,7 @@ setLoading(false)
                                 className="modal-close"
                                 disabled={isUpdating}
                             >
-                                
+                                Close
                             </button>
                         </div>
 
@@ -1167,8 +1180,8 @@ setLoading(false)
 
             {/* Shift Options Modal */}
             {shiftOptionsVisible && selectedShift && (
-                <div className="modal-overlay">
-                    <div className="modal">
+                <div className="modal-overlay" onClick={() => { setShiftOptionsVisible(false); setSelectedShift(null); }}>
+                    <div className="modal" onClick={(e) => { e.stopPropagation(); }}>
                         <div className="modal-header">
                             <h2 className="modal-title">
                                  Shift Options
@@ -1180,7 +1193,7 @@ setLoading(false)
                                 }}
                                 className="modal-close"
                             >
-                                
+                                Close
                             </button>
                         </div>
 
@@ -1247,8 +1260,8 @@ setLoading(false)
 
             {/* Create New Shift Modal */}
             {createShiftVisible && newShiftData && (
-                <div className="modal-overlay">
-                    <div className="modal">
+                <div className="modal-overlay" onClick={() => { if (!isUpdating) { setCreateShiftVisible(false); setNewShiftData(null); setShiftDescription(''); } }}>
+                    <div className="modal" onClick={(e) => { e.stopPropagation(); }}>
                         <div className="modal-header">
                             <h2 className="modal-title">
                                  Create New Shift
@@ -1262,7 +1275,7 @@ setLoading(false)
                                 className="modal-close"
                                 disabled={isUpdating}
                             >
-                                
+                                Close
                             </button>
                         </div>
 
