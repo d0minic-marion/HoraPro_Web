@@ -3,17 +3,49 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, Link, useLocation } from 'react-router-dom';
 
 import CreateUserPage from './pages/CreateUserPage';
 import AddSchedule from './components/AddSchdule';
 import UserSchedule from './components/UserSchedule';
 
-//importation de bootstrap
-import "bootstrap/dist/css/bootstrap.min.css";
-import "bootstrap/dist/js/bootstrap.bundle.min.js";
+// Navigation bar (kept same visual style)
+function Navigation() {
+  const location = useLocation();
 
-import Navigation from './components/navbar';
+  return (
+    <nav className="nav-container">
+      <div className="nav-inner">
+        <div className="nav-left">
+          <span className="app-title">Shift / Schedule Admin</span>
+        </div>
+
+        <div className="nav-links">
+          <Link
+            to="/"
+            className={`nav-link ${location.pathname === '/' ? 'nav-link-active' : ''}`}
+          >
+            Create User
+          </Link>
+
+          <Link
+            to="/schedulizer"
+            className={`nav-link ${location.pathname === '/schedulizer' ? 'nav-link-active' : ''}`}
+          >
+            Scheduler
+          </Link>
+
+          <Link
+            to="/userschedule"
+            className={`nav-link ${location.pathname === '/userschedule' ? 'nav-link-active' : ''}`}
+          >
+            User Schedule
+          </Link>
+        </div>
+      </div>
+    </nav>
+  );
+}
 
 function App() {
   return (
