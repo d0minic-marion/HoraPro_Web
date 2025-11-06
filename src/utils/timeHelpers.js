@@ -1,6 +1,9 @@
 // Helpers for time and hours calculations
 // Extracted from AddSchdule.js
 
+import { differenceInMinutes, addDays, format } from 'date-fns';
+import { parseDate, parseDateTime } from './scheduleUtils';
+
 /**
  * Parse multiple possible time formats into { h, m }.
  * Supports:
@@ -78,30 +81,60 @@ export function computeWorkedHoursForShift(shiftData) {
         checkOutTimestamp,
         checkedInTime,
         checkedOutTime,
-        overnight
+        overnight,
+        eventDate,
+        endDate
     } = shiftData;
 
     // 1. Highest priority: Timestamp pair
-    if (
-        checkInTimestamp && checkOutTimestamp &&
-        typeof checkInTimestamp.toDate === 'function' &&
-        typeof checkOutTimestamp.toDate === 'function'
-    ) {
-        const startDate = checkInTimestamp.toDate();
-        const endDate   = checkOutTimestamp.toDate();
-        const hours = diffHours(startDate, endDate);
-        if (hours >= 0) {
-            return Number(hours.toFixed(2));
+    if (checkInTimestamp && checkOutTimestamp) {
+        const startDate =
+            typeof checkInTimestamp?.toDate === 'function'
+                ? checkInTimestamp.toDate()
+                : (checkInTimestamp instanceof Date ? checkInTimestamp : null);
+        const endDateObj =
+            typeof checkOutTimestamp?.toDate === 'function'
+                ? checkOutTimestamp.toDate()
+                : (checkOutTimestamp instanceof Date ? checkOutTimestamp : null);
+
+        if (startDate && endDateObj) {
+            const hours = diffHours(startDate, endDateObj);
+            if (hours >= 0) {
+                return Number(hours.toFixed(2));
+            }
         }
     }
 
-    // 2. Fallback: HH:mm style
+    // 2. Fallback: eventDate + HH:mm strings
+    if (eventDate && checkedInTime && checkedOutTime) {
+        try {
+            const start = parseDateTime(eventDate, checkedInTime);
+            let endDateStr = (endDate && endDate !== eventDate) ? endDate : eventDate;
+            let end = parseDateTime(endDateStr, checkedOutTime);
+
+            if (overnight || end <= start) {
+                if (!endDate || endDate === eventDate) {
+                    endDateStr = format(addDays(parseDate(eventDate), 1), 'yyyy-MM-dd');
+                    end = parseDateTime(endDateStr, checkedOutTime);
+                }
+            }
+
+            const minutes = differenceInMinutes(end, start);
+            if (minutes >= 0) {
+                return Number((minutes / 60).toFixed(2));
+            }
+        } catch {
+            // fall through to legacy HH:mm parsing
+        }
+    }
+
+    // 3. Legacy fallback: HH:mm style without dates
     const startParsed = parseHHMM(checkedInTime);
-    const endParsed   = parseHHMM(checkedOutTime);
+    const endParsed = parseHHMM(checkedOutTime);
 
     if (startParsed && endParsed) {
         let startTotalMin = startParsed.h * 60 + startParsed.m;
-        let endTotalMin   = endParsed.h * 60 + endParsed.m;
+        let endTotalMin = endParsed.h * 60 + endParsed.m;
 
         if (overnight === true && endTotalMin < startTotalMin) {
             endTotalMin += 24 * 60;
@@ -120,9 +153,9 @@ export function computeWorkedHoursForShift(shiftData) {
 /**
  * Derive the appropriate status for a shift based on its data.
  * Rules:
- * - If both checkin + checkout present → "completed"
- * - Else if has checkIn but no checkOut → "in_progress"
- * - Else → "scheduled"
+ * - If both checkin + checkout present -> "completed"
+ * - Else if has checkIn but no checkOut -> "in_progress"
+ * - Else -> "scheduled"
  */
 export function deriveShiftStatus(shiftData) {
     const { checkedInTime, checkedOutTime, checkInTimestamp, checkOutTimestamp } = shiftData || {};
@@ -134,3 +167,5 @@ export function deriveShiftStatus(shiftData) {
     if (hasIn && !hasOut) return 'in_progress';
     return 'scheduled';
 }
+
+

@@ -491,7 +491,7 @@ export const getShiftStatus = (shift) => {
     if (shift.checkedInTime && shift.checkedOutTime) {
         return { 
             status: 'completed', 
-            label: '✅ Completed', 
+            label: 'Completed', 
             color: 'success',
             bgColor: 'bg-green-100',
             textColor: 'text-green-800'
@@ -499,7 +499,7 @@ export const getShiftStatus = (shift) => {
     } else if (shift.checkedInTime && !shift.checkedOutTime) {
         return { 
             status: 'in-progress', 
-            label: '🔄 In Progress', 
+            label: 'In Progress', 
             color: 'warning',
             bgColor: 'bg-yellow-100',
             textColor: 'text-yellow-800'
@@ -507,7 +507,7 @@ export const getShiftStatus = (shift) => {
     } else if (now > endTime) {
         return { 
             status: 'missed', 
-            label: '❌ Missed', 
+            label: 'Missed', 
             color: 'danger',
             bgColor: 'bg-red-100',
             textColor: 'text-red-800'
@@ -515,7 +515,7 @@ export const getShiftStatus = (shift) => {
     } else if (now >= startTime && now <= endTime) {
         return { 
             status: 'current', 
-            label: '⏰ Current', 
+            label: 'Current', 
             color: 'primary',
             bgColor: 'bg-blue-100',
             textColor: 'text-blue-800'
@@ -523,7 +523,7 @@ export const getShiftStatus = (shift) => {
     } else {
         return { 
             status: 'scheduled', 
-            label: '📋 Scheduled', 
+            label: 'Scheduled', 
             color: 'secondary',
             bgColor: 'bg-gray-100',
             textColor: 'text-gray-800'

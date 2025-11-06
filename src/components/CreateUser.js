@@ -268,14 +268,14 @@ function CreateUser() {
                 isActive: true,
             });
 
-            toast.success('✅ User created successfully', {
+            toast.success('User created successfully', {
                 position: 'top-right',
             });
 
             resetForm();
         } catch (error) {
             console.error('Error creating user:', error);
-            toast.error(`❌ Error creating user: ${error.message}`, {
+            toast.error(`Error creating user: ${error.message}`, {
                 position: 'top-right',
             });
         } finally {
@@ -293,7 +293,7 @@ function CreateUser() {
             {/* ------------------------------ */}
             <div className="card">
                 <div className="card-header">
-                    <h1 className="card-title">⚙️ Overtime Settings (Global)</h1>
+                    <h1 className="card-title">Overtime Settings (Global)</h1>
                     <p className="card-subtitle">
                         These rules affect all users for weekly earnings & overtime
                         splits
@@ -356,7 +356,7 @@ function CreateUser() {
                             className="btn btn-primary"
                             disabled={otSaving || otLoading}
                         >
-                            {otSaving 'Saving...' : '💾 Save Overtime Rules'}
+                            {otSaving ? 'Saving...' : 'Save Overtime Rules'}
                         </button>
                     </div>
                 </form>
@@ -367,7 +367,7 @@ function CreateUser() {
             {/* ------------------------------ */}
             <div className="card mt-6">
                 <div className="card-header">
-                    <h2 className="card-title">👤 Create New User / Employee</h2>
+                    <h2 className="card-title">Create New User / Employee</h2>
                     <p className="card-subtitle">
                         This will create a login account (email / temporary password)
                         and register this employee in the system.
@@ -527,7 +527,7 @@ function CreateUser() {
                             className="btn btn-primary flex-1"
                             disabled={isSubmitting}
                         >
-                            {isSubmitting 'Creating...' : '➕ Create User'}
+                            {isSubmitting ? 'Creating...' : 'Create User'}
                         </button>
 
                         <button
@@ -545,7 +545,7 @@ function CreateUser() {
                             className="btn btn-success flex-1"
                             disabled={isSubmitting}
                         >
-                            📋 View All Employees & Schedules
+                            View All Employees & Schedules
                         </button>
                     </div>
                 </form>
@@ -557,3 +557,4 @@ function CreateUser() {
 }
 
 export default CreateUser;
+

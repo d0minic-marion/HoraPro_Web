@@ -20,7 +20,7 @@ import {
     startOfWeek, 
     endOfWeek, 
     isWeekend,
-    differenceInHours,
+    differenceInMinutes,
     addHours,
     addDays
 } from 'date-fns';
@@ -30,6 +30,7 @@ import { syncShiftDerivedFieldsIfNeeded } from '../utils/shiftSyncHelpers';
 import { 
     validateShiftOverlap, 
     groupShiftsByDate,
+    parseDate,
     parseDateTime
 } from '../utils/scheduleUtils';
 
@@ -257,8 +258,8 @@ function AddSchedule() {
                             event.start <= currentWeekEnd
                         )
                         .reduce((total, event) => {
-                            const hours = differenceInHours(event.end, event.start);
-                            return total + hours;
+                            const minutes = differenceInMinutes(event.end, event.start);
+                            return total + (minutes / 60);
                         }, 0);
 
                     stats[user.id] = {
@@ -289,21 +290,20 @@ function AddSchedule() {
             return false;
         }
 
-        const start = new Date(`${eventDate}T${startHour}`);
-        let end = new Date(`${eventDate}T${endHour}`);
-        if (endsNextDay || end <= start) {
-            if (endsNextDay) {
-                if (end <= start) {
-                    end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
-                }
-            } else if (end <= start) {
+        const start = parseDateTime(eventDate, startHour);
+        let computedEnd = parseDateTime(eventDate, endHour);
+        let computedEndDateStr = eventDate;
+        if (endsNextDay || computedEnd <= start) {
+            if (!endsNextDay && computedEnd <= start) {
                 toast.error('End time must be after start time (or select Ends Next Day)', { position: 'top-right' });
                 setValidationResult(null);
                 return false;
             }
+            computedEndDateStr = format(addDays(parseDate(eventDate), 1), 'yyyy-MM-dd');
+            computedEnd = parseDateTime(computedEndDateStr, endHour);
         }
 
-        const duration = differenceInHours(end, start);
+        const duration = Number((differenceInMinutes(computedEnd, start) / 60).toFixed(2));
         if (duration > 16) {
             toast.error('A shift cannot last more than 16 hours', { position: 'top-right' });
             setValidationResult(null);
@@ -374,38 +374,39 @@ function AddSchedule() {
         setIsSubmitting(true);
 
         try {
-            const start = new Date(`${eventDate}T${startHour}`);
-            let end = new Date(`${eventDate}T${endHour}`);
-            let effectiveEnd = end;
+            const start = parseDateTime(eventDate, startHour);
+            let computedEndDateStr = eventDate;
+            let end = parseDateTime(eventDate, endHour);
+
             if (endsNextDay || end <= start) {
-                if (endsNextDay && end <= start) {
-                    effectiveEnd = new Date(end.getTime() + 24 * 60 * 60 * 1000);
-                } else if (!endsNextDay && end <= start) {
+                if (!endsNextDay && end <= start) {
                     throw new Error('Invalid end time without overnight flag');
                 }
+                computedEndDateStr = format(addDays(parseDate(eventDate), 1), 'yyyy-MM-dd');
+                end = parseDateTime(computedEndDateStr, endHour);
             }
-            const duration = differenceInHours(effectiveEnd, start);
-            const isWeekendShift = isWeekend(start);
 
-            const endDate = (endsNextDay && effectiveEnd.getDate() !== start.getDate())
-                ? format(addDays(new Date(eventDate), 1), 'yyyy-MM-dd')
-                : eventDate;
+            const durationMinutes = differenceInMinutes(end, start);
+            const duration = Number((durationMinutes / 60).toFixed(2));
+            const isWeekendShift = isWeekend(start);
 
             const documentData = {
                 eventDate: eventDate,
-                endDate: endDate,
                 eventDescription: eventDescription.trim(),
                 startHour: startHour,
                 endHour: endHour,
                 duration: duration,
                 isWeekend: isWeekendShift,
                 shiftType: isWeekendShift ? 'overtime' : 'regular',
-                overnight: endsNextDay || (endDate !== eventDate),
+                overnight: endsNextDay || (computedEndDateStr !== eventDate),
                 checkedInTime: '',
                 checkedOutTime: '',
-                totalHoursDay: 0,
+                totalHoursDay: null,
                 createdAt: Timestamp.now(),
                 status: 'scheduled'
+            }
+            if (endsNextDay || computedEndDateStr !== eventDate) {
+                documentData.endDate = computedEndDateStr;
             }
 
             await AddSchdForADateInFirestore(selectedUserId, documentData);
@@ -901,15 +902,14 @@ function AddSchedule() {
                                     }`}>
                                         {(() => {
                                             try {
-                                                const baseDate = '2000-01-01';
-                                                const start = new Date(`${baseDate}T${startHour}`);
-                                                let end = new Date(`${baseDate}T${endHour}`);
+                                                const start = parseDateTime(eventDate, startHour);
+                                                let end = parseDateTime(eventDate, endHour);
+                                                let effectiveEndDateStr = eventDate;
                                                 if ((endsNextDay || end <= start) && endHour && startHour) {
-                                                    if (endsNextDay && end <= start) {
-                                                        end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
-                                                    }
+                                                    effectiveEndDateStr = format(addDays(parseDate(eventDate), 1), 'yyyy-MM-dd');
+                                                    end = parseDateTime(effectiveEndDateStr, endHour);
                                                 }
-                                                const duration = differenceInHours(end, start);
+                                                const duration = Number((differenceInMinutes(end, start) / 60).toFixed(2));
                                                 
                                                 const userDailyData = userDailySchedules[selectedUserId];
                                                 const existingShiftsForDate = userDailyData && userDailyData[eventDate]
@@ -939,20 +939,20 @@ function AddSchedule() {
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        {eventDate && isWeekend(new Date(eventDate)) && (
+                                                        {eventDate && isWeekend(parseDate(eventDate)) && (
                                                             <div className="mt-2 text-orange-600">
                                                                  Weekend - Overtime rate
                                                             </div>
                                                         )}
                                                         {validationResult?.overnight && (
                                                             <div className="mt-2 text-indigo-600">
-                                                                 Overnight shift spanning {eventDate}  {format(addDays(new Date(eventDate),1), 'yyyy-MM-dd')}
+                                                                 Overnight shift spanning {eventDate}  {format(addDays(parseDate(eventDate),1), 'yyyy-MM-dd')}
                                                             </div>
                                                         )}
                                                         {existingShiftsForDate.length > 0 && (
                                                             <div className="mt-2">
                                                                 <div className="text-xs font-medium text-gray-700 mb-1">
-                                                                    Existing shifts for {format(new Date(eventDate), 'MM/dd/yyyy')}:
+                                                                    Existing shifts for {format(parseDate(eventDate), 'MM/dd/yyyy')}:
                                                                 </div>
                                                                 {existingShiftsForDate.map((shift, index) => (
                                                                     <div key={shift.id || index} className="text-xs text-gray-600">

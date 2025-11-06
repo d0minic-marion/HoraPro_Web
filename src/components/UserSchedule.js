@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { dbFirestore } from '../connections/ConnFirebaseServices'
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, getDoc, addDoc, deleteDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, updateDoc, getDoc, addDoc, deleteDoc, setDoc, serverTimestamp, deleteField, Timestamp } from 'firebase/firestore';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
@@ -13,7 +13,7 @@ import {
     differenceInMinutes,
     startOfWeek,
     endOfWeek,
-    
+    addMinutes,
     isPast,
     addDays,
     startOfDay,
@@ -27,7 +27,7 @@ import CalendarPanel from './userSchedule/CalendarPanel';
 import { syncWeeklyEarningsForUserWeek, loadWageHistory, getRateForDate } from '../utils/earningsHelpers';
 import {
     groupShiftsByDate,
-    
+    parseDate,
     parseDateTime
 } from '../utils/scheduleUtils';
 
@@ -483,16 +483,34 @@ setLoading(false)
 
         setIsUpdating(true);
         try {
-            await updateDoc(doc(dbFirestore, 'users', userId, "UserSchedule", reg.id), {
+            const shiftRef = doc(dbFirestore, 'users', userId, "UserSchedule", reg.id);
+
+            await updateDoc(shiftRef, {
                 checkedInTime: timeCheckIn,
-                checkInTimestamp: new Date(),
+                checkInTimestamp: deleteField(),
                 eventDescription: shiftDescription || reg.eventDescription
             });
+            setEventToEdit(prev => prev && prev.id === reg.id ? {
+                ...prev,
+                checkedInTime: timeCheckIn,
+                checkInTimestamp: null
+            } : prev);
+
+            try {
+                await syncShiftDerivedFieldsIfNeeded(shiftRef, {
+                    ...reg,
+                    checkedInTime: timeCheckIn,
+                    checkInTimestamp: null
+                });
+            } catch (deriveErr) {
+                console.error('Failed to sync derived fields after check-in:', deriveErr);
+            }
+
             toast.success(" Checked in successfully!");
             // Re-sync weekly earnings for the affected week (non-blocking)
             try {
                 if (userData && userData.hourlyWage) {
-                    const eventDateObj = new Date(reg.eventDate);
+                    const eventDateObj = parseDate(reg.eventDate);
                     const weekStart = startOfWeek(eventDateObj, { weekStartsOn: 1 });
                     const weekEnd = endOfWeek(eventDateObj, { weekStartsOn: 1 });
                     await syncWeeklyEarningsForUserWeek({
@@ -528,32 +546,271 @@ setLoading(false)
             return;
         }
 
-        let checkInDate = new Date(`${reg.eventDate}T${checkInHour}`);
-        let checkOutDate = new Date(`${reg.eventDate}T${timeCheckOut}`);
+        const baseEndDateStr = (reg.endDate && reg.endDate !== reg.eventDate) ? reg.endDate : reg.eventDate;
+        let checkInDate = parseDateTime(reg.eventDate, checkInHour);
+        let checkOutDate = parseDateTime(baseEndDateStr, timeCheckOut);
+        let isOvernight = checkOutOvernightEdit;
+        let effectiveEndDateStr = baseEndDateStr;
 
-        if (checkOutOvernightEdit || checkOutDate <= checkInDate) {
-            checkOutDate = new Date(checkOutDate.getTime() + 24 * 60 * 60 * 1000);
+        if (!isOvernight && checkOutDate <= checkInDate) {
+            isOvernight = true;
         }
+        if (isOvernight) {
+            effectiveEndDateStr = format(addDays(parseDate(reg.eventDate), 1), 'yyyy-MM-dd');
+            checkOutDate = parseDateTime(effectiveEndDateStr, timeCheckOut);
+        }
+
         const totalMinutes = differenceInMinutes(checkOutDate, checkInDate);
         if (totalMinutes <= 0) {
             toast.error("Check-out time must be after check-in time");
             return;
         }
-        const totalHours = (totalMinutes / 60).toFixed(2);
+        setIsUpdating(true);
+        try {
+            const shiftRef = doc(dbFirestore, 'users', userId, "UserSchedule", reg.id);
+
+            const updatePayload = {
+                checkedOutTime: timeCheckOut,
+                checkOutTimestamp: deleteField(),
+                eventDescription: shiftDescription || reg.eventDescription,
+                overnight: isOvernight
+            };
+
+            if (isOvernight) {
+                updatePayload.endDate = effectiveEndDateStr;
+            } else {
+                updatePayload.endDate = deleteField();
+            }
+
+            await updateDoc(shiftRef, updatePayload);
+
+            setEventToEdit(prev => {
+                if (!prev || prev.id !== reg.id) return prev;
+                const updated = {
+                    ...prev,
+                    checkedOutTime: timeCheckOut,
+                    checkOutTimestamp: null,
+                    overnight: isOvernight
+                };
+                if (isOvernight) {
+                    updated.endDate = effectiveEndDateStr;
+                } else {
+                    delete updated.endDate;
+                }
+                return updated;
+            });
+
+            const updatedShift = {
+                ...reg,
+                checkedInTime: checkInHour,
+                checkedOutTime: timeCheckOut,
+                checkOutTimestamp: null,
+                overnight: isOvernight
+            };
+            if (isOvernight) {
+                updatedShift.endDate = effectiveEndDateStr;
+            } else if (updatedShift.endDate) {
+                delete updatedShift.endDate;
+            }
+
+            try {
+                await syncShiftDerivedFieldsIfNeeded(shiftRef, updatedShift);
+            } catch (deriveErr) {
+                console.error('Failed to sync derived fields after check-out:', deriveErr);
+            }
+
+            toast.success(" Checked out successfully!");
+            setEditMenuVisibility(false);
+
+            // Weekly sync to capture worked hours
+            try {
+                if (userData && userData.hourlyWage) {
+                    const eventDateObj = parseDate(reg.eventDate);
+                    const weekStart = startOfWeek(eventDateObj, { weekStartsOn: 1 });
+                    const weekEnd = endOfWeek(eventDateObj, { weekStartsOn: 1 });
+                    await syncWeeklyEarningsForUserWeek({
+                        userId,
+                        userHourlyWage: parseFloat(userData.hourlyWage) || 0,
+                        weekStartDate: weekStart,
+                        weekEndDate: weekEnd,
+                    });
+                }
+            } catch (e) {
+                console.error('Weekly earnings sync failed (non-blocking):', e);
+            }
+        } catch (error) {
+            toast.error(" Failed to check out!");
+        } finally {
+            setIsUpdating(false);
+        }
+    }
+
+    async function checkInTimestampOnly(reg) {
+        if (userData && userData.isActive === false) {
+            toast.error('This user is inactive. Check-in is disabled.');
+            return;
+        }
+        if (!reg || !reg.id) {
+            toast.error("Please select a valid shift");
+            return;
+        }
+
+        const timestamp = Timestamp.now();
 
         setIsUpdating(true);
         try {
-            await updateDoc(doc(dbFirestore, 'users', userId, "UserSchedule", reg.id), {
-                checkedOutTime: timeCheckOut,
-                totalHoursDay: totalHours,
-                checkOutTimestamp: new Date(),
-                status: 'completed',
+            const shiftRef = doc(dbFirestore, 'users', userId, "UserSchedule", reg.id);
+
+            await updateDoc(shiftRef, {
+                checkInTimestamp: timestamp,
+                checkedInTime: deleteField(),
                 eventDescription: shiftDescription || reg.eventDescription
             });
-            toast.success(" Checked out successfully!");
-            setEditMenuVisibility(false);
+            setEventToEdit(prev => prev && prev.id === reg.id ? {
+                ...prev,
+                checkInTimestamp: timestamp,
+                checkedInTime: null
+            } : prev);
+
+            try {
+                await syncShiftDerivedFieldsIfNeeded(shiftRef, {
+                    ...reg,
+                    checkInTimestamp: timestamp,
+                    checkedInTime: null
+                });
+            } catch (deriveErr) {
+                console.error('Failed to sync derived fields after timestamp check-in:', deriveErr);
+            }
+
+            toast.success(" Check-in timestamp updated successfully!");
+
+            try {
+                if (userData && userData.hourlyWage) {
+                    const eventDateObj = parseDate(reg.eventDate);
+                    const weekStart = startOfWeek(eventDateObj, { weekStartsOn: 1 });
+                    const weekEnd = endOfWeek(eventDateObj, { weekStartsOn: 1 });
+                    await syncWeeklyEarningsForUserWeek({
+                        userId,
+                        userHourlyWage: parseFloat(userData.hourlyWage) || 0,
+                        weekStartDate: weekStart,
+                        weekEndDate: weekEnd,
+                    });
+                }
+            } catch (e) {
+                console.error('Weekly earnings sync failed (non-blocking):', e);
+            }
         } catch (error) {
-            toast.error(" Failed to check out!");
+            toast.error(" Failed to update check-in timestamp!");
+        } finally {
+            setIsUpdating(false);
+        }
+    }
+
+    async function checkOutTimestampOnly(reg) {
+        if (userData && userData.isActive === false) {
+            toast.error('This user is inactive. Check-out is disabled.');
+            return;
+        }
+        if (!reg || !reg.id) {
+            toast.error("Please select a valid shift");
+            return;
+        }
+
+        const hasCheckInReference = reg.checkInTimestamp;
+        if (!hasCheckInReference) {
+            toast.error("A check-in timestamp is required before recording a check-out timestamp");
+            return;
+        }
+
+        const timestamp = Timestamp.now();
+        const checkInTimestamp = reg.checkInTimestamp;
+        const checkInDate = checkInTimestamp
+            ? (typeof checkInTimestamp.toDate === 'function'
+                ? checkInTimestamp.toDate()
+                : (checkInTimestamp instanceof Date ? checkInTimestamp : null))
+            : null;
+        const checkOutDateObj = timestamp.toDate();
+
+        if (checkInDate && checkOutDateObj <= checkInDate) {
+            toast.error("Check-out timestamp must be after the check-in timestamp");
+            return;
+        }
+
+        const isOvernight = checkInDate ? checkOutDateObj.getDate() !== checkInDate.getDate() : false;
+        const effectiveEndDateStr = format(checkOutDateObj, 'yyyy-MM-dd');
+
+        setIsUpdating(true);
+        try {
+            const shiftRef = doc(dbFirestore, 'users', userId, "UserSchedule", reg.id);
+
+            const updatePayload = {
+                checkOutTimestamp: timestamp,
+                checkedOutTime: deleteField(),
+                eventDescription: shiftDescription || reg.eventDescription,
+                overnight: isOvernight
+            };
+            if (isOvernight) {
+                updatePayload.endDate = effectiveEndDateStr;
+            } else {
+                updatePayload.endDate = deleteField();
+            }
+
+            await updateDoc(shiftRef, updatePayload);
+            setEventToEdit(prev => {
+                if (!prev || prev.id !== reg.id) return prev;
+                const updated = {
+                    ...prev,
+                    checkOutTimestamp: timestamp,
+                    checkedOutTime: null,
+                    overnight: isOvernight
+                };
+                if (isOvernight) {
+                    updated.endDate = effectiveEndDateStr;
+                } else {
+                    delete updated.endDate;
+                }
+                return updated;
+            });
+
+            const updatedShift = {
+                ...reg,
+                checkOutTimestamp: timestamp,
+                checkedOutTime: null,
+                checkInTimestamp: reg.checkInTimestamp,
+                overnight: isOvernight
+            };
+            if (isOvernight) {
+                updatedShift.endDate = effectiveEndDateStr;
+            } else if (updatedShift.endDate) {
+                delete updatedShift.endDate;
+            }
+
+            try {
+                await syncShiftDerivedFieldsIfNeeded(shiftRef, updatedShift);
+            } catch (deriveErr) {
+                console.error('Failed to sync derived fields after timestamp check-out:', deriveErr);
+            }
+
+            toast.success(" Check-out timestamp updated successfully!");
+            setEditMenuVisibility(false);
+
+            try {
+                if (userData && userData.hourlyWage) {
+                    const eventDateObj = parseDate(reg.eventDate);
+                    const weekStart = startOfWeek(eventDateObj, { weekStartsOn: 1 });
+                    const weekEnd = endOfWeek(eventDateObj, { weekStartsOn: 1 });
+                    await syncWeeklyEarningsForUserWeek({
+                        userId,
+                        userHourlyWage: parseFloat(userData.hourlyWage) || 0,
+                        weekStartDate: weekStart,
+                        weekEndDate: weekEnd,
+                    });
+                }
+            } catch (e) {
+                console.error('Weekly earnings sync failed (non-blocking):', e);
+            }
+        } catch (error) {
+            toast.error(" Failed to update check-out timestamp!");
         } finally {
             setIsUpdating(false);
         }
@@ -595,12 +852,13 @@ setLoading(false)
             toast.error("Please select valid times");
             return;
         }
-        const startDate = new Date(`${reg.eventDate}T${startHour}`);
-        let endDate = new Date(`${reg.eventDate}T${endHour}`);
+        const startDate = parseDateTime(reg.eventDate, startHour);
+        let endDateStr = (reg.endDate && reg.endDate !== reg.eventDate) ? reg.endDate : reg.eventDate;
+        let endDate = parseDateTime(endDateStr, endHour);
         let crosses = false;
         if (overnightEdit) {
             if (endDate <= startDate) {
-                endDate = new Date(endDate.getTime() + 24 * 60 * 60 * 1000);
+                endDate = parseDateTime(format(addDays(parseDate(reg.eventDate), 1), 'yyyy-MM-dd'), endHour);
             }
             crosses = endDate.getDate() !== startDate.getDate();
         } else {
@@ -618,11 +876,10 @@ setLoading(false)
 
         const overlappingShifts = scheduleData.filter(shift => {
             if (shift.id === reg.id) return false;
-            const exStart = new Date(`${shift.eventDate}T${shift.startHour}`);
-            let exEnd = new Date(`${shift.eventDate}T${shift.endHour}`);
-            if (shift.endDate && shift.endDate !== shift.eventDate) {
-                exEnd = new Date(`${shift.endDate}T${shift.endHour}`);
-            } else if (exEnd <= exStart) {
+            const exStart = parseDateTime(shift.eventDate, shift.startHour || '00:00');
+            const endBaseDate = (shift.endDate && shift.endDate !== shift.eventDate) ? shift.endDate : shift.eventDate;
+            let exEnd = parseDateTime(endBaseDate, shift.endHour || shift.startHour || '00:00');
+            if (exEnd <= exStart) {
                 exEnd = new Date(exEnd.getTime() + 24 * 60 * 60 * 1000);
             }
             return (startDate < exEnd && endDate > exStart);
@@ -639,18 +896,51 @@ setLoading(false)
 
         setIsUpdating(true);
         try {
-            await updateDoc(doc(dbFirestore, 'users', userId, "UserSchedule", reg.id), {
-                startHour: startHour,
-                endHour: endHour,
-                endDate: crosses ? format(addDays(new Date(reg.eventDate), 1), 'yyyy-MM-dd') : reg.eventDate,
+            const shiftRef = doc(dbFirestore, 'users', userId, "UserSchedule", reg.id);
+            const durationHours = Number((durationMinutes / 60).toFixed(2));
+            const payload = {
+                startHour,
+                endHour,
                 overnight: crosses,
-                eventDescription: shiftDescription || reg.eventDescription
-            });
-            // Ensure planned duration stays in sync (hours)
+                eventDescription: shiftDescription || reg.eventDescription,
+                duration: durationHours
+            };
+            if (crosses) {
+                payload.endDate = format(addDays(parseDate(reg.eventDate), 1), 'yyyy-MM-dd');
+            } else {
+                payload.endDate = deleteField();
+            }
+            await updateDoc(shiftRef, payload);
+
+            // Recompute derived fields (status, totalHoursDay) if check-in/out exists
             try {
-                const _durationHours = +(durationMinutes / 60).toFixed(2);
-                await updateDoc(doc(dbFirestore, 'users', userId, "UserSchedule", reg.id), { duration: _durationHours });
-            } catch {}
+                await syncShiftDerivedFieldsIfNeeded(shiftRef, {
+                    ...reg,
+                    startHour,
+                    endHour,
+                    endDate: crosses ? format(addDays(parseDate(reg.eventDate), 1), 'yyyy-MM-dd') : reg.eventDate,
+                    overnight: crosses,
+                    duration: durationHours
+                });
+            } catch (deriveErr) {
+                console.error('Failed to sync derived fields after updating shift times:', deriveErr);
+            }
+
+            // Re-sync derived weekly aggregates so scheduled totals reflect the new span
+            try {
+                const eventDateObj = parseDate(reg.eventDate);
+                const weekStart = startOfWeek(eventDateObj, { weekStartsOn: 1 });
+                const weekEnd = endOfWeek(eventDateObj, { weekStartsOn: 1 });
+                const hourlyWage = Number(userData?.hourlyWage) || 0;
+                await syncWeeklyEarningsForUserWeek({
+                    userId,
+                    userHourlyWage: hourlyWage,
+                    weekStartDate: weekStart,
+                    weekEndDate: weekEnd
+                });
+            } catch (syncErr) {
+                console.error('Weekly earnings sync failed after updating shift times:', syncErr);
+            }
             toast.success(" Shift times updated successfully!");
         } catch (error) {
             toast.error(" Error updating shift times!");
@@ -709,27 +999,51 @@ setLoading(false)
 
     // Handle creating new shift by dragging on calendar
     const handleSelectSlot = ({ start, end }) => {
+        let slotStart = start;
+        let slotEnd = end;
+        let durationMinutes = differenceInMinutes(slotEnd, slotStart);
+        const isAllDaySelection = durationMinutes >= 24 * 60 || durationMinutes === 0;
+
+        if (isAllDaySelection) {
+            const defaultStart = new Date(
+                slotStart.getFullYear(),
+                slotStart.getMonth(),
+                slotStart.getDate(),
+                8,
+                0,
+                0,
+                0
+            );
+            const defaultEnd = new Date(defaultStart.getTime() + 8 * 60 * 60 * 1000);
+            slotStart = defaultStart;
+            slotEnd = defaultEnd;
+            durationMinutes = differenceInMinutes(slotEnd, slotStart);
+        }
+
         // Validate minimum duration (15 minutes)
-        const durationMinutes = differenceInMinutes(end, start);
         if (durationMinutes < 15) {
             toast.error('The shift must last at least 15 minutes', { position: 'top-right' });
             return;
         }
 
         // Format dates for the new shift
-        const eventDate = format(start, 'yyyy-MM-dd');
-        const startHour = format(start, 'HH:mm');
-        const endHour = format(end, 'HH:mm');
+        const eventDate = format(slotStart, 'yyyy-MM-dd');
+        const startHour = format(slotStart, 'HH:mm');
+        const endHour = format(slotEnd, 'HH:mm');
 
         // Quick check for overlapping shifts before opening modal
         const overlappingShifts = scheduleData.filter(shift => {
             if (shift.eventDate !== eventDate) return false;
 
-            const existingStartTime = new Date(`${shift.eventDate}T${shift.startHour}`);
-            const existingEndTime = new Date(`${shift.eventDate}T${shift.endHour}`);
+            const existingStartTime = parseDateTime(shift.eventDate, shift.startHour);
+            const endBaseDate = (shift.endDate && shift.endDate !== shift.eventDate) ? shift.endDate : shift.eventDate;
+            let existingEndTime = parseDateTime(endBaseDate, shift.endHour);
+            if (existingEndTime <= existingStartTime) {
+                existingEndTime = new Date(existingEndTime.getTime() + 24 * 60 * 60 * 1000);
+            }
 
             // Check if there's any overlap
-            return (start < existingEndTime && end > existingStartTime);
+            return (slotStart < existingEndTime && slotEnd > existingStartTime);
         });
 
         if (overlappingShifts.length > 0) {
@@ -741,14 +1055,24 @@ setLoading(false)
             return;
         }
 
+        const crossesMidnight = format(slotStart, 'yyyy-MM-dd') !== format(slotEnd, 'yyyy-MM-dd');
+        const derivedEndDate = crossesMidnight
+            ? format(addDays(parseDate(eventDate), 1), 'yyyy-MM-dd')
+            : eventDate;
+
         // Set up data for the modal
-        setNewShiftData({
+        const shiftDraft = {
             eventDate,
             startHour,
             endHour,
-            start,
-            end
-        });
+            start: slotStart,
+            end: slotEnd,
+            overnight: crossesMidnight
+        };
+        if (crossesMidnight) {
+            shiftDraft.endDate = derivedEndDate;
+        }
+        setNewShiftData(shiftDraft);
 
         setShiftDescription('');
         setCreateShiftVisible(true);
@@ -762,15 +1086,22 @@ setLoading(false)
             setIsUpdating(true);
 
             // Check for overlapping shifts
-            const newStartTime = new Date(`${newShiftData.eventDate}T${newShiftData.startHour}`);
-            const newEndTime = new Date(`${newShiftData.eventDate}T${newShiftData.endHour}`);
+            const newStartTime = parseDateTime(newShiftData.eventDate, newShiftData.startHour);
+            const newEndBaseDate = newShiftData.endDate && newShiftData.endDate !== newShiftData.eventDate
+                ? newShiftData.endDate
+                : newShiftData.eventDate;
+            const newEndTime = parseDateTime(newEndBaseDate, newShiftData.endHour);
 
             // Find overlapping shifts on the same date
             const overlappingShifts = scheduleData.filter(shift => {
                 if (shift.eventDate !== newShiftData.eventDate) return false;
 
-                const existingStartTime = new Date(`${shift.eventDate}T${shift.startHour}`);
-                const existingEndTime = new Date(`${shift.eventDate}T${shift.endHour}`);
+                const existingStartTime = parseDateTime(shift.eventDate, shift.startHour);
+                const existingEndBase = (shift.endDate && shift.endDate !== shift.eventDate) ? shift.endDate : shift.eventDate;
+                let existingEndTime = parseDateTime(existingEndBase, shift.endHour);
+                if (existingEndTime <= existingStartTime) {
+                    existingEndTime = new Date(existingEndTime.getTime() + 24 * 60 * 60 * 1000);
+                }
 
                 // Check if there's any overlap
                 return (newStartTime < existingEndTime && newEndTime > existingStartTime);
@@ -785,21 +1116,52 @@ setLoading(false)
                 return;
             }
 
+            let plannedEnd = parseDateTime(newEndBaseDate, newShiftData.endHour);
+            if (plannedEnd <= newStartTime || newShiftData.overnight) {
+                const nextDayStr = format(addDays(parseDate(newShiftData.eventDate), 1), 'yyyy-MM-dd');
+                plannedEnd = parseDateTime(nextDayStr, newShiftData.endHour);
+            }
+            const plannedMinutes = differenceInMinutes(plannedEnd, newStartTime);
+            const plannedHours = Number((plannedMinutes / 60).toFixed(2));
+
             // Create new shift object
             const newShift = {
-                userId: userId,
                 eventDate: newShiftData.eventDate,
                 startHour: newShiftData.startHour,
                 endHour: newShiftData.endHour,
                 eventDescription: shiftDescription || 'New shift',
                 checkedInTime: '',
                 checkedOutTime: '',
-                totalHoursDay: ''
+                totalHoursDay: null,
+                duration: plannedHours,
+                overnight: newShiftData.overnight || false,
+                status: 'scheduled',
+                shiftType: 'regular',
+                createdAt: serverTimestamp()
             };
+            if (newShift.overnight) {
+                newShift.endDate = format(addDays(parseDate(newShiftData.eventDate), 1), 'yyyy-MM-dd');
+            }
 
             // Add to Firebase
             const scheduleCollection = collection(dbFirestore, 'users', userId, 'UserSchedule');
             await addDoc(scheduleCollection, newShift);
+
+            // Re-sync weekly stats so scheduled totals include the new shift
+            try {
+                const eventDateObj = newShiftData.start;
+                const weekStart = startOfWeek(eventDateObj, { weekStartsOn: 1 });
+                const weekEnd = endOfWeek(eventDateObj, { weekStartsOn: 1 });
+                const hourlyWage = Number(userData?.hourlyWage) || 0;
+                await syncWeeklyEarningsForUserWeek({
+                    userId,
+                    userHourlyWage: hourlyWage,
+                    weekStartDate: weekStart,
+                    weekEndDate: weekEnd
+                });
+            } catch (syncErr) {
+                console.error('Weekly earnings sync failed after creating shift:', syncErr);
+            }
 
             toast.success(`Shift created: ${newShiftData.startHour} - ${newShiftData.endHour} on ${format(newShiftData.start, 'dd/MM/yyyy')}`, {
                 position: 'top-right'
@@ -928,19 +1290,29 @@ setLoading(false)
                             <div className="detail-item">
                                 <div className="detail-label">Date</div>
                                 <div className="detail-value">
-                                    {format(new Date(eventToEdit.eventDate), 'MMMM dd, yyyy')}
+                                    {format(
+                                        parseDateTime(
+                                            eventToEdit.eventDate,
+                                            eventToEdit.startHour || '00:00'
+                                        ),
+                                        'MMMM dd, yyyy'
+                                    )}
                                 </div>
                             </div>
                             <div className="detail-item">
                                 <div className="detail-label">Scheduled Time</div>
                                 <div className="detail-value">
-                                    {eventToEdit.startHour} - {eventToEdit.endHour} {overnightEdit && '(overnight)'}
+                                    {eventToEdit.startHour} - {eventToEdit.endHour}
+                                    {' '}
+                                    {(overnightEdit || (eventToEdit.endDate && eventToEdit.endDate !== eventToEdit.eventDate)) && (
+                                        <span className="text-xs text-gray-500">(next day)</span>
+                                    )}
                                 </div>
                             </div>
                             {overnightEdit && (
                                 <div className="detail-item">
                                     <div className="detail-label">Crosses to</div>
-                                    <div className="detail-value">{eventToEdit.endDate || format(addDays(new Date(eventToEdit.eventDate), 1), 'yyyy-MM-dd')}</div>
+                                    <div className="detail-value">{eventToEdit.endDate || format(addDays(parseDate(eventToEdit.eventDate), 1), 'yyyy-MM-dd')}</div>
                                 </div>
                             )}
                             <div className="detail-item">
@@ -1166,9 +1538,41 @@ setLoading(false)
                                     ' Update Check-Out'
                                 )}
                             </button>
+                        </div>
+                        <div className="flex gap-4 mt-4">
+                            <button
+                                onClick={() => checkInTimestampOnly(eventToEdit)}
+                                className="btn btn-success flex-1"
+                                disabled={isUpdating}
+                            >
+                                {isUpdating ? (
+                                    <>
+                                        <span className="spinner"></span>
+                                        Updating...
+                                    </>
+                                ) : (
+                                    ' Update Timestamp Check-In'
+                                )}
+                            </button>
+                            <button
+                                onClick={() => checkOutTimestampOnly(eventToEdit)}
+                                className="btn btn-warning flex-1"
+                                disabled={isUpdating}
+                            >
+                                {isUpdating ? (
+                                    <>
+                                        <span className="spinner"></span>
+                                        Updating...
+                                    </>
+                                ) : (
+                                    ' Update Timestamp Check-Out'
+                                )}
+                            </button>
+                        </div>
+                        <div className="flex mt-4">
                             <button
                                 onClick={closeMenuVisibility}
-                                className="btn btn-secondary"
+                                className="btn btn-secondary flex-1"
                                 disabled={isUpdating}
                             >
                                  Cancel
@@ -1201,13 +1605,23 @@ setLoading(false)
                             <div className="detail-item">
                                 <div className="detail-label">Date</div>
                                 <div className="detail-value">
-                                    {format(new Date(selectedShift.eventDate), 'MMMM dd, yyyy')}
+                                    {format(
+                                        parseDateTime(
+                                            selectedShift.eventDate,
+                                            selectedShift.startHour || '00:00'
+                                        ),
+                                        'MMMM dd, yyyy'
+                                    )}
                                 </div>
                             </div>
                             <div className="detail-item">
                                 <div className="detail-label">Time</div>
                                 <div className="detail-value">
                                     {selectedShift.startHour} - {selectedShift.endHour}
+                                    {' '}
+                                    {(selectedShift.overnight || (selectedShift.endDate && selectedShift.endDate !== selectedShift.eventDate)) && (
+                                        <span className="text-xs text-gray-500">(next day)</span>
+                                    )}
                                 </div>
                             </div>
                             <div className="detail-item">
@@ -1283,19 +1697,33 @@ setLoading(false)
                             <div className="detail-item">
                                 <div className="detail-label">Date</div>
                                 <div className="detail-value">
-                                    {format(new Date(newShiftData.eventDate), 'MMMM dd, yyyy')}
+                                    {format(newShiftData.start, 'MMMM dd, yyyy')}
                                 </div>
                             </div>
                             <div className="detail-item">
                                 <div className="detail-label">Time</div>
                                 <div className="detail-value">
                                     {newShiftData.startHour} - {newShiftData.endHour}
+                                    {' '}
+                                    {newShiftData.overnight && (
+                                        <span className="text-xs text-gray-500">(next day)</span>
+                                    )}
                                 </div>
                             </div>
                             <div className="detail-item">
                                 <div className="detail-label">Duration</div>
                                 <div className="detail-value">
-                                    {(differenceInMinutes(newShiftData.end, newShiftData.start) / 60).toFixed(2)} hours
+                                    {(() => {
+                                        const start = parseDateTime(newShiftData.eventDate, newShiftData.startHour);
+                                        const endBase = newShiftData.overnight && newShiftData.endDate
+                                            ? newShiftData.endDate
+                                            : newShiftData.eventDate;
+                                        let end = parseDateTime(endBase, newShiftData.endHour);
+                                        if (newShiftData.overnight && end <= start) {
+                                            end = parseDateTime(format(addDays(parseDate(newShiftData.eventDate), 1), 'yyyy-MM-dd'), newShiftData.endHour);
+                                        }
+                                        return (differenceInMinutes(end, start) / 60).toFixed(2);
+                                    })()} hours
                                 </div>
                             </div>
                         </div>

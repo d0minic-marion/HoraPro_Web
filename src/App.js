@@ -63,7 +63,7 @@ function App() {
 
         <div className="page-wrapper">
           <Routes>
-            {/* Home → CreateUserPage (overtime settings + create employee) */}
+            {/* Home -> CreateUserPage (overtime settings + create employee) */}
             <Route path="/" element={<CreateUserPage />} />
 
             {/* Scheduler / global view */}

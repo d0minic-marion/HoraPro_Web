@@ -1,14 +1,15 @@
 import React from 'react'
 import { differenceInMinutes } from 'date-fns'
-import { parseDateTime } from '../../utils/scheduleUtils'
+import { parseDate, parseDateTime } from '../../utils/scheduleUtils'
 import { getShiftStatus as getShiftStatusUtil } from '../../utils/scheduleUtils'
+import { computeWorkedHoursForShift } from '../../utils/timeHelpers'
 
 function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOutTime, isUpdating }) {
     const statusInfo = getShiftStatusUtil(shift);
 
     const canCheckIn = (() => {
         try {
-            const dateObj = new Date(shift.eventDate);
+            const dateObj = parseDate(shift.eventDate);
             const today = new Date();
             return dateObj.toDateString() === today.toDateString() && !shift.checkedInTime;
         } catch { return false }
@@ -26,7 +27,8 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
                 const firstDayEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59, 59, 999);
                 end = firstDayEnd;
             } else {
-                end = parseDateTime(shift.eventDate, shift.endHour);
+                const endBaseDate = (shift.endDate && shift.endDate !== shift.eventDate) ? shift.endDate : shift.eventDate;
+                end = parseDateTime(endBaseDate, shift.endHour);
                 if ((shift.overnight || shift.endHour <= shift.startHour) && !shift.isContinuation) {
                     const firstDayEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59, 59, 999);
                     end = firstDayEnd;
@@ -34,7 +36,18 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
             }
             const hrs = differenceInMinutes(end, start) / 60;
             return `${hrs.toFixed(2)}h scheduled`;
-        } catch { return '' }
+        } catch { return ''; }
+    })();
+
+    const actualWorkedHours = (() => {
+        const worked = computeWorkedHoursForShift(shift);
+        if (typeof worked === 'number' && !Number.isNaN(worked)) {
+            return Number(worked.toFixed(2));
+        }
+        if (typeof shift.totalHoursDay === 'number' && !Number.isNaN(shift.totalHoursDay)) {
+            return Number(shift.totalHoursDay.toFixed(2));
+        }
+        return null;
     })();
 
     return (
@@ -43,7 +56,11 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
                 <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                         <span className="text-lg font-mono font-semibold">
-                            {shift.startHour} - {shift.endHour}{shift.isContinuation ? ' (cont.)' : ''}{(shift.overnight || shift.isContinuation) && ' '}
+                            {shift.startHour} - {shift.endHour}
+                            {shift.isContinuation ? ' (cont.)' : ''}
+                            {(shift.overnight || (shift.endDate && shift.endDate !== shift.eventDate)) && (
+                                <span className="text-sm text-gray-500 ml-2">(next day)</span>
+                            )}
                         </span>
                         <span className={`px-2 py-1 rounded text-sm font-medium ${statusInfo.bgColor} ${statusInfo.textColor}`}>
                             {statusInfo.label}
@@ -55,24 +72,28 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
 
                     <div className="flex gap-6 text-sm">
                         <div className="flex items-center gap-1">
-                            <span> Check-in:</span>
+                            <span style={{ fontWeight: 700, color: '#111827', marginRight:'0.2rem' }}>Check-in:</span>
                             <span className={shift.checkedInTime ? 'text-green-600 font-mono' : 'text-gray-400'}>
                                 {shift.checkedInTime || 'Not recorded'}
                             </span>
                         </div>
                         <div className="flex items-center gap-1">
-                            <span> Check-out:</span>
+                            <span style={{ fontWeight: 700, color: '#111827', marginRight:'0.2rem', marginLeft: '0.5rem' }}> Check-out:</span>
                             <span className={shift.checkedOutTime ? 'text-blue-600 font-mono' : 'text-gray-400'}>
                                 {shift.checkedOutTime || 'Not recorded'}
                             </span>
+                            {shift.overnight && shift.checkedOutTime && (
+                                <span className="text-xs text-gray-500 ml-1">(next day)</span>
+                            )}
                         </div>
                         <div className="flex items-center gap-1">
-                            <span> Total:</span>
-                            <span className={shift.totalHoursDay ? 'text-green-600 font-semibold' : 'text-gray-400'}>
-                                {shift.totalHoursDay ? `${shift.totalHoursDay}h` : '-'}
+                            <span style={{ fontWeight: 700, color: '#111827', marginRight: '0.2rem', marginLeft: '0.5rem' }}> Total:</span>
+                            <span className={actualWorkedHours != null ? 'text-green-600 font-semibold' : 'text-gray-400'}>
+                                {actualWorkedHours != null ? `${actualWorkedHours}h` : '-'}
                             </span>
                         </div>
                     </div>
+
                 </div>
 
                 <div className="flex gap-2 ml-4">
@@ -100,9 +121,9 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
                         <button
                             onClick={() => editInOutTime(shift)}
                             className="btn btn-primary btn-sm"
-                            title="Edit Times"
+                            title="Edit Shift"
                         >
-                             Edit
+                             Edit Shift
                         </button>
                     )}
                 </div>
