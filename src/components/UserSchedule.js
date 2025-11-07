@@ -1078,7 +1078,7 @@ setLoading(false)
         setCreateShiftVisible(true);
     };
 
-    //  ESTA ES LA FUNCIN QUE TE FALT EN LA VERSIN PEGADA
+
     const createShiftWithDescription = async () => {
         if (!newShiftData) return;
 
@@ -1179,7 +1179,7 @@ setLoading(false)
             setIsUpdating(false);
         }
     };
-    //  ESTA PARTE TIENE QUE EXISTIR DENTRO DEL COMPONENTE UserSchedule()
+
 
     const eventStyleGetter = (event) => {
         return {

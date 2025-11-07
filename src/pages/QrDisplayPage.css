@@ -1,0 +1,116 @@
+.qr-display-root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: #0e1b2a;
+  color: #f4f8fb;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.qr-display-header {
+  margin-bottom: 24px;
+}
+
+.qr-display-title {
+  font-size: 2.5rem;
+  margin-bottom: 8px;
+}
+
+.qr-display-subtitle {
+  font-size: 1.1rem;
+  margin: 0 auto;
+  max-width: 520px;
+  color: #b7c7d9;
+}
+
+.qr-display-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  max-width: 480px;
+}
+
+.qr-display-board {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+  min-height: 420px;
+}
+
+.qr-display-board canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+.qr-display-board--inactive {
+  background-color: rgba(10, 24, 42, 0.75);
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  color: #e2e8f0;
+}
+
+.qr-display-placeholder {
+  font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #e2e8f0;
+  padding: 0 24px;
+}
+
+.qr-display-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  background-color: rgba(15, 36, 57, 0.85);
+  border-radius: 12px;
+  padding: 16px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.qr-display-meta dt {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8fa6bf;
+}
+
+.qr-display-meta dd {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #e4edf7;
+}
+
+.qr-display-status {
+  font-size: 1rem;
+  color: #f7c948;
+  background-color: rgba(247, 201, 72, 0.15);
+  border-radius: 12px;
+  padding: 12px 18px;
+}
+
+.qr-display-status--error {
+  color: #f38ba8;
+  background-color: rgba(243, 139, 168, 0.15);
+}
+
+@media (max-width: 480px) {
+  .qr-display-title {
+    font-size: 2rem;
+  }
+
+  .qr-display-board {
+    padding: 24px;
+    min-height: 360px;
+  }
+}
