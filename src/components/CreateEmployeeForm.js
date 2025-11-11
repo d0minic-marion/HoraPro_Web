@@ -234,7 +234,7 @@ function CreateEmployeeForm() {
           <input
             id="hourlyWage"
             type="number"
-            min={15.75}
+            min={16.10}
             max={500}
             step={0.01}
             className={`form-input ${errors.hourlyWage ? 'border-danger' : ''}`}
@@ -248,7 +248,7 @@ function CreateEmployeeForm() {
             </div>
           )}
           <p className="text-xs text-gray-500 mt-1">
-            Minimum suggested: 15.75 CAD / hour
+            Minimum suggested: 16.10 CAD / hour
           </p>
         </div>
 

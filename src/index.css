@@ -139,7 +139,7 @@ code {
 .form-input,
 .form-select,
 .form-textarea {
-  width: 100%;
+  width: 550px;
   padding: var(--space-sm) var(--space-md);
   border: 2px solid var(--medium-gray);
   border-radius: var(--radius-md);
@@ -163,6 +163,11 @@ code {
 
 /* Card Styles */
 .card {
+  flex: auto;
+  margin-left: auto;
+  margin-right: auto;
+  align-items: center;
+  width: 750px;
   background-color: var(--white);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
@@ -180,6 +185,7 @@ code {
   margin: 0 0 var(--space-sm) 0;
   font-size: 1.5rem;
   font-weight: 600;
+  width: 500px;
   color: var(--dark-gray);
 }
 

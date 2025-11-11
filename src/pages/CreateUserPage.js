@@ -3,9 +3,17 @@ import CreateEmployeeForm from '../components/CreateEmployeeForm';
 
 function CreateUserPage() {
   return (
-    <div className="animate-fade-in">
-      <OvertimeSettingsCard />
-      <CreateEmployeeForm />
+    <div className="animate-fade-in flex">
+
+
+      <div className='pr-4'>
+        <CreateEmployeeForm />
+      </div>
+      <div className='pl-4'>
+        <OvertimeSettingsCard />
+      </div>
+      
+      
     </div>
   );
 }
