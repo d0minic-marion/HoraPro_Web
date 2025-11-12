@@ -797,8 +797,8 @@ function AddSchedule() {
 
             {/* Schedule Creation Modal */}
             {visibilitySchdForm && (
-                <div className="modal-overlay">
-                    <div className="modal event-modal">
+                <div className="modal-overlay" onClick={hideSchdForm}>
+                    <div className="modal event-modal" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <div>
                                 <h2 className="modal-title">

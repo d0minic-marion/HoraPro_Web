@@ -10,9 +10,6 @@ import AddSchedule from './components/AddSchdule';
 import UserSchedule from './components/UserSchedule';
 import EditProfilePage from './pages/EditProfilePage';
 
-import "bootstrap/dist/css/bootstrap.min.css";
-import "bootstrap/dist/js/bootstrap.bundle.min.js";
-
 import Navigation from './components/navbar';
 
 function App() {
