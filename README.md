@@ -9,14 +9,14 @@
 npm install
 ```
 
-## Running in Admin Mode (default UI)
+## Running in Admin Mode (default UI. Keep the terminal running for DB synchronization)
 ```bash
 npm start
 ```
 Opens the admin console at http://localhost:3000.
 
-## Running the QR Display
-```bash (new terminal)
+## Running the QR Display  (in a new terminal)
+```bash 
 npm run start:qr
 ```
 Launches the QR-only view on port 3001 with `REACT_APP_MODE=qr`.
