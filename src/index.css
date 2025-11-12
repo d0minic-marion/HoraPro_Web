@@ -125,8 +125,26 @@ code {
 }
 
 /* Form Styles */
+
+.forms-container {
+  display: flex;
+  gap: 2rem; 
+  flex-wrap: wrap; 
+}
+
+/* Chaque formulaire prend 50% sur grand écran */
+.forms-container > * {
+  flex: 1 1 45%; 
+  min-width: 300px; 
+}
+
+
 .form-group {
   margin-bottom: var(--space-lg);
+}
+
+.form-group.flex-1 {
+  flex: 1 1 0;
 }
 
 .form-label {
@@ -139,7 +157,9 @@ code {
 .form-input,
 .form-select,
 .form-textarea {
-  width: 550px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: var(--space-sm) var(--space-md);
   border: 2px solid var(--medium-gray);
   border-radius: var(--radius-md);
@@ -156,6 +176,14 @@ code {
   box-shadow: 0 0 0 3px rgb(37 99 235 / 0.1);
 }
 
+.inputs-row{
+  display: flex;
+  gap: 20px;
+}
+
+
+
+
 .form-textarea {
   resize: vertical;
   min-height: 80px;
@@ -167,7 +195,8 @@ code {
   margin-left: auto;
   margin-right: auto;
   align-items: center;
-  width: 750px;
+  width: 100%;
+  max-width: 100%;
   background-color: var(--white);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
