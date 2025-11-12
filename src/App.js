@@ -3,57 +3,17 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
-import { BrowserRouter, Route, Routes, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 
 import CreateUserPage from './pages/CreateUserPage';
 import AddSchedule from './components/AddSchdule';
 import UserSchedule from './components/UserSchedule';
 import EditProfilePage from './pages/EditProfilePage';
 
-// Navigation bar (kept same visual style)
-function Navigation() {
-  const location = useLocation();
+import "bootstrap/dist/css/bootstrap.min.css";
+import "bootstrap/dist/js/bootstrap.bundle.min.js";
 
-  return (
-    <nav className="nav-container">
-      <div className="nav-inner">
-        <div className="nav-left">
-          <span className="app-title">Shift / Schedule Admin</span>
-        </div>
-
-        <div className="nav-links">
-          <Link
-            to="/"
-            className={`nav-link ${location.pathname === '/' ? 'nav-link-active' : ''}`}
-          >
-            Create User
-          </Link>
-
-          <Link
-            to="/schedulizer"
-            className={`nav-link ${location.pathname === '/schedulizer' ? 'nav-link-active' : ''}`}
-          >
-            Scheduler
-          </Link>
-
-          <Link
-            to="/schedulizer?showInactive=true"
-            className={`nav-link ${location.pathname === '/schedulizer' && location.search.includes('showInactive=true') ? 'nav-link-active' : ''}`}
-          >
-            Inactive Employees
-          </Link>
-
-          <Link
-            to="/userschedule"
-            className={`nav-link ${location.pathname === '/userschedule' ? 'nav-link-active' : ''}`}
-          >
-            User Schedule
-          </Link>
-        </div>
-      </div>
-    </nav>
-  );
-}
+import Navigation from './components/navbar';
 
 function App() {
   return (

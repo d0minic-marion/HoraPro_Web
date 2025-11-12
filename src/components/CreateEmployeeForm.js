@@ -159,45 +159,50 @@ function CreateEmployeeForm() {
         </p>
       </div>
 
-      <form onSubmit={handleCreateUser} className="grid md:grid-cols-2 gap-4">
-        {/* First Name */}
-        <div className="form-group">
-          <label className="form-label" htmlFor="firstName">
-            First Name *
-          </label>
-          <input
-            id="firstName"
-            type="text"
-            className={`form-input ${errors.firstName ? 'border-danger' : ''}`}
-            value={firstName}
-            disabled={isSubmitting}
-            onChange={(e) => setFirstName(e.target.value)}
-          />
-          {errors.firstName && (
-            <div className="text-danger mt-1 text-sm">
-              {errors.firstName}
-            </div>
-          )}
-        </div>
+      <form onSubmit={handleCreateUser} className="flex flex-col gap-4">
+        
 
-        {/* Last Name */}
-        <div className="form-group">
-          <label className="form-label" htmlFor="lastName">
-            Last Name *
-          </label>
-          <input
-            id="lastName"
-            type="text"
-            className={`form-input ${errors.lastName ? 'border-danger' : ''}`}
-            value={lastName}
-            disabled={isSubmitting}
-            onChange={(e) => setLastName(e.target.value)}
-          />
-          {errors.lastName && (
-            <div className="text-danger mt-1 text-sm">
-              {errors.lastName}
-            </div>
-          )}
+
+        <div className='inputs-row'>
+          {/* First Name */}
+          <div className="form-group flex-1">
+            <label className="form-label" htmlFor="firstName">
+              First Name *
+            </label>
+            <input
+              id="firstName"
+              type="text"
+              className={`form-input ${errors.firstName ? 'border-danger' : ''}`}
+              value={firstName}
+              disabled={isSubmitting}
+              onChange={(e) => setFirstName(e.target.value)}
+            />
+            {errors.firstName && (
+              <div className="text-danger mt-1 text-sm">
+                {errors.firstName}
+              </div>
+            )}
+          </div>
+
+          {/* Last Name */}
+          <div className="form-group flex-1">
+            <label className="form-label" htmlFor="lastName">
+              Last Name *
+            </label>
+            <input
+              id="lastName"
+              type="text"
+              className={`form-input ${errors.lastName ? 'border-danger' : ''}`}
+              value={lastName}
+              disabled={isSubmitting}
+              onChange={(e) => setLastName(e.target.value)}
+            />
+            {errors.lastName && (
+              <div className="text-danger mt-1 text-sm">
+                {errors.lastName}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Category */}
@@ -234,7 +239,7 @@ function CreateEmployeeForm() {
           <input
             id="hourlyWage"
             type="number"
-            min={15.75}
+            min={16.10}
             max={500}
             step={0.01}
             className={`form-input ${errors.hourlyWage ? 'border-danger' : ''}`}
@@ -248,55 +253,62 @@ function CreateEmployeeForm() {
             </div>
           )}
           <p className="text-xs text-gray-500 mt-1">
-            Minimum suggested: 15.75 CAD / hour
+            Minimum suggested: 16.10 CAD / hour
           </p>
+        </div>
+        
+
+        <div className='inputs-row'>
+          {/* Email Address */}
+          <div className="form-group flex-1">
+            <label className="form-label" htmlFor="email">
+              Email Address *
+            </label>
+            <input
+              id="email"
+              type="email"
+              className={`form-input ${errors.email ? 'border-danger' : ''}`}
+              value={email}
+              disabled={isSubmitting}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            {errors.email && (
+              <div className="text-danger mt-1 text-sm">
+                {errors.email}
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-1">
+              The employee will use this email to sign in (in the other app).
+            </p>
+          </div>
+
+          {/* Temporary Password */}
+          <div className="form-group flex-1">
+            <label className="form-label" htmlFor="tempPassword">
+              Temporary Password (for first login) *
+            </label>
+            <input
+              id="tempPassword"
+              type="password"
+              className={`form-input ${errors.tempPassword ? 'border-danger' : ''}`}
+              value={tempPassword}
+              disabled={isSubmitting}
+              onChange={(e) => setTempPassword(e.target.value)}
+            />
+            {errors.tempPassword && (
+              <div className="text-danger mt-1 text-sm">
+                {errors.tempPassword}
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-1">
+              Minimum 6 characters. The employee can change it later.
+            </p>
+          </div>
+
         </div>
 
-        {/* Email Address */}
-        <div className="form-group">
-          <label className="form-label" htmlFor="email">
-            Email Address *
-          </label>
-          <input
-            id="email"
-            type="email"
-            className={`form-input ${errors.email ? 'border-danger' : ''}`}
-            value={email}
-            disabled={isSubmitting}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          {errors.email && (
-            <div className="text-danger mt-1 text-sm">
-              {errors.email}
-            </div>
-          )}
-          <p className="text-xs text-gray-500 mt-1">
-            The employee will use this email to sign in (in the other app).
-          </p>
-        </div>
-
-        {/* Temporary Password */}
-        <div className="form-group">
-          <label className="form-label" htmlFor="tempPassword">
-            Temporary Password (for first login) *
-          </label>
-          <input
-            id="tempPassword"
-            type="password"
-            className={`form-input ${errors.tempPassword ? 'border-danger' : ''}`}
-            value={tempPassword}
-            disabled={isSubmitting}
-            onChange={(e) => setTempPassword(e.target.value)}
-          />
-          {errors.tempPassword && (
-            <div className="text-danger mt-1 text-sm">
-              {errors.tempPassword}
-            </div>
-          )}
-          <p className="text-xs text-gray-500 mt-1">
-            Minimum 6 characters. The employee can change it later.
-          </p>
-        </div>
+      
+ 
 
         {/* Action buttons */}
         <div className="md:col-span-2 flex flex-wrap gap-2 mt-4">

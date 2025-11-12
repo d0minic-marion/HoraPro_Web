@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 
 import { dbFirestore, authFirebase } from '../connections/ConnFirebaseServices';
 
+import './CreateUser.css'
+
 import {
     collection,
     doc,
