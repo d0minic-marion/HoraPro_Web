@@ -13,44 +13,25 @@ function Navigation() {
           <img src={HoraProLogo} alt="horaprologo" width={175} height={75} />
         </div>
 
-          <button 
-            className="navbar-toggler" 
-            type="button" 
-            data-bs-toggle="collapse" 
-            data-bs-target="#navbarScroll" 
-            aria-controls="navbarScroll" 
-            aria-expanded="false" 
-            aria-label="Toggle navigation">
+          <div
+            className="navbar-links"
+            style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}
+          >
+            <Link
+              to="/"
+              className={`nav-link ${location.pathname === '/' ? 'nav-link-active' : ''}`}
+            >
+              Create User
+            </Link>
 
-            <span className="navbar-toggler-icon"></span>
-          </button>       
+            <Link
+              to="/schedulizer"
+              className={`nav-link ${location.pathname === '/schedulizer' ? 'nav-link-active' : ''}`}
+            >
+              Scheduler
+            </Link>
 
-          <div className="collapse navbar-collapse" id="navbarScroll" >
-            <ul className="navbar-nav me-auto my-2 my-lg-0 narbar-nav-scroll">
-
-              <li className="nav-item"> 
-                <Link to="/" className={`nav-link ${location.pathname === '/' ? 'nav-link-active' : ''}`}>
-                  Create User
-                </Link>
-              </li>
-
-              <li className="nav-item">
-                <Link to="/schedulizer" className={`nav-link ${location.pathname === '/schedulizer' ? 'nav-link-active' : ''}`}>
-                  Scheduler
-                </Link>
-              </li>
-
-              <li className="nav-item">
-                <Link to="/userschedule" className={`nav-link ${location.pathname === '/userschedule' ? 'nav-link-active' : ''}`}>
-                  User Schedule
-                </Link>
-              </li>
-
-
-
-
-            </ul>            
-        </div>
+          </div>
       </div>
     </nav>
   );

@@ -4,9 +4,6 @@ import { dbFirestore } from '../connections/ConnFirebaseServices'
 import { 
     collection,
     addDoc,
-    onSnapshot,
-    query,
-    orderBy,
     doc,
     setDoc,
     Timestamp
@@ -17,22 +14,18 @@ import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import { 
     format, 
-    startOfWeek, 
-    endOfWeek, 
     isWeekend,
     differenceInMinutes,
     addHours,
     addDays
 } from 'date-fns';
-import { computeWorkedHoursForShift, deriveShiftStatus } from '../utils/timeHelpers';
-import { syncWeeklyEarningsForUserWeek } from '../utils/earningsHelpers';
-import { syncShiftDerivedFieldsIfNeeded } from '../utils/shiftSyncHelpers';
 import { 
-    validateShiftOverlap, 
-    groupShiftsByDate,
     parseDate,
     parseDateTime
 } from '../utils/scheduleUtils';
+import useUsersData from '../hooks/useUsersData';
+import useAllSchedules from '../hooks/useAllSchedules';
+import useScheduleValidation from '../hooks/useScheduleValidation';
 
 const localizer = momentLocalizer(moment);
 
@@ -45,11 +38,17 @@ function AddSchedule() {
     const navigate = useNavigate()
     const location = useLocation()
 
-    const [colUsersData, setColUsersData] = useState([])
-    const [loading, setLoading] = useState(true)
-    const [calendarEvents, setCalendarEvents] = useState([])
+    // Use custom hooks for data loading
+    const { colUsersData, loading } = useUsersData();
+    const { calendarEvents, userDailySchedules, weeklyStats } = useAllSchedules(colUsersData);
+
     const [selectedUser, setSelectedUser] = useState(null)
     const [currentView, setCurrentView] = useState('lista');
+
+    const activeUsersCount = useMemo(
+        () => colUsersData.filter(user => user.isActive !== false).length,
+        [colUsersData]
+    );
 
     // Form states
     const [eventDate, setEventDate] = useState('')
@@ -60,12 +59,18 @@ function AddSchedule() {
     const [selectedUserName, setSelectedUserName] = useState('')
     const [visibilitySchdForm, setVisibilitySchdForm] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
-    const [userDailySchedules, setUserDailySchedules] = useState({}) // Store schedules by user and date
-    const [validationResult, setValidationResult] = useState(null)
     const [endsNextDay, setEndsNextDay] = useState(false) // Overnight flag
 
-    // Statistics state
-    const [weeklyStats, setWeeklyStats] = useState({})
+    // Use custom hook for validation
+    const validationResult = useScheduleValidation(
+        eventDate, 
+        startHour, 
+        endHour, 
+        selectedUserId, 
+        userDailySchedules, 
+        endsNextDay
+    );
+
     // Listing filter
     const [showInactive, setShowInactive] = useState(false)
 
@@ -112,181 +117,9 @@ function AddSchedule() {
         return slots;
     }, []);
 
-
-    useEffect(() => {
-        const refColUsers = collection(dbFirestore, 'users')
-        const queryUsers = query(refColUsers, orderBy('lastName'))
-
-        const unsubscribe = onSnapshot(queryUsers, async (onSnap) => {
-            const data = onSnap.docs.map((docRef) => ({ id: docRef.id, ...docRef.data() }))
-            setColUsersData(data)
-            setLoading(false)
-            
-            // Load all schedules for calendar view and kick off live syncing logic
-            await loadAllSchedules(data);
-        }, (error) => {
-            toast.error(`Error fetching users: ${error.message}`, { position: 'top-right' });
-            setLoading(false)
-        })
-        return () => unsubscribe()
-    }, [])
-
-    // Real-time validation when form fields change
-    useEffect(() => {
-        if (eventDate && startHour && endHour && selectedUserId) {
-            const userDailyData = userDailySchedules[selectedUserId];
-            const existingShiftsForDate = userDailyData && userDailyData[eventDate]
-                ? userDailyData[eventDate].shifts
-                : [];
-
-            const validation = validateShiftOverlap(
-                startHour, 
-                endHour, 
-                eventDate, 
-                existingShiftsForDate,
-                null,
-                { allowOvernight: endsNextDay, maxHours: 16 }
-            );
-
-            setValidationResult(validation);
-        } else {
-            setValidationResult(null);
-        }
-    }, [eventDate, startHour, endHour, selectedUserId, userDailySchedules, endsNextDay])
-
-    const loadAllSchedules = async (users) => {
-        const stats = {};
-
-        for (const user of users) {
-            try {
-                const userScheduleRef = collection(dbFirestore, 'users', user.id, 'UserSchedule');
-                const scheduleQuery = query(userScheduleRef, orderBy('eventDate'));
-                
-                onSnapshot(scheduleQuery, async (snapshot) => {
-                    // Build array of userEvents for calendar / table
-                    const userEvents = await Promise.all(snapshot.docs.map(async (docSnap) => {
-                        const data = docSnap.data();
-                        const shiftRef = doc(dbFirestore, 'users', user.id, 'UserSchedule', docSnap.id);
-
-                        // --- SYNC SHIFT FIELDS (totalHoursDay, status)
-                        await syncShiftDerivedFieldsIfNeeded(shiftRef, data);
-
-                        // Logging for debug / auditing
-                        console.log('[SYNC CHECK]', {
-                            userId: user.id,
-                            shiftId: docSnap.id,
-                            checkedInTime: data.checkedInTime,
-                            checkedOutTime: data.checkedOutTime,
-                            checkInTimestamp: data.checkInTimestamp,
-                            checkOutTimestamp: data.checkOutTimestamp,
-                            overnight: data.overnight,
-                            computedHours: computeWorkedHoursForShift(data),
-                            storedTotalHoursDay: data.totalHoursDay,
-                            statusBefore: data.status,
-                            derivedStatus: deriveShiftStatus(data)
-                        });
-
-                        // Build event object for calendar
-                        const start = parseDateTime(data.eventDate, data.startHour);
-                        let end;
-                        if (data.endDate && data.endDate !== data.eventDate) {
-                            end = parseDateTime(data.endDate, data.endHour);
-                        } else {
-                            end = parseDateTime(data.eventDate, data.endHour);
-                            if (end <= start) {
-                                end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
-                            }
-                        }
-
-                        return {
-                            id: docSnap.id,
-                            userId: user.id,
-                            title: `${user.firstName} ${user.lastName} - ${data.eventDescription}`,
-                            start: start,
-                            end: end,
-                            resource: {
-                                ...data,
-                                userName: `${user.firstName} ${user.lastName}`,
-                                userHourlyWage: user.hourlyWage,
-                                shiftType: data.shiftType || 'regular'
-                            }
-                        };
-                    }));
-
-                    // --- SYNC WEEKLY EARNINGS ---
-                    // Tomamos la SEMANA de HOY para ese usuario,
-                    // porque este componente se usa como "motor en vivo".
-                    // Usaremos el rango Monday->Sunday de la semana actual del sistema.
-                    const now = new Date();
-                    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
-                    const weekEnd   = endOfWeek(now, { weekStartsOn: 1 });
-
-                    await syncWeeklyEarningsForUserWeek({
-                        userId: user.id,
-                        userHourlyWage: user.hourlyWage,
-                        weekStartDate: weekStart,
-                        weekEndDate: weekEnd
-                    });
-
-                    // Group schedules by user and date for validation UI
-                    const userDailyGroup = groupShiftsByDate(
-                        userEvents.map(event => ({
-                            id: event.id,
-                            eventDate: event.resource.eventDate,
-                            startHour: event.resource.startHour,
-                            endHour: event.resource.endHour,
-                            eventDescription: event.resource.eventDescription,
-                            checkedInTime: event.resource.checkedInTime,
-                            checkedOutTime: event.resource.checkedOutTime,
-                            totalHoursDay: event.resource.totalHoursDay
-                        }))
-                    );
-
-                    // Update daily schedules state (used by validation)
-                    setUserDailySchedules(prev => ({
-                        ...prev,
-                        [user.id]: userDailyGroup
-                    }));
-
-                    // Calculate weekly stats for dashboard cards (visual only)
-                    const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-                    const currentWeekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
-                    
-                    const weeklyHours = userEvents
-                        .filter(event => 
-                            event.start >= currentWeekStart && 
-                            event.start <= currentWeekEnd
-                        )
-                        .reduce((total, event) => {
-                            const minutes = differenceInMinutes(event.end, event.start);
-                            return total + (minutes / 60);
-                        }, 0);
-
-                    stats[user.id] = {
-                        weeklyHours,
-                        totalShifts: userEvents.length,
-                        upcomingShifts: userEvents.filter(event => event.start > new Date()).length
-                    };
-
-                    // Update visible calendar state (no UI removal, just merge)
-                    setCalendarEvents(prev => {
-                        const filtered = prev.filter(event => event.userId !== user.id);
-                        return [...filtered, ...userEvents];
-                    });
-                });
-
-            } catch (error) {
-                console.error(`Error loading schedule for user ${user.id}:`, error);
-            }
-        }
-        
-        setWeeklyStats(stats);
-    };
-
     const validateScheduleForm = () => {
         if (!eventDate || !startHour || !endHour || !eventDescription.trim()) {
             toast.error('Please fill in all required fields', { position: 'top-right' });
-            setValidationResult(null);
             return false;
         }
 
@@ -296,7 +129,6 @@ function AddSchedule() {
         if (endsNextDay || computedEnd <= start) {
             if (!endsNextDay && computedEnd <= start) {
                 toast.error('End time must be after start time (or select Ends Next Day)', { position: 'top-right' });
-                setValidationResult(null);
                 return false;
             }
             computedEndDateStr = format(addDays(parseDate(eventDate), 1), 'yyyy-MM-dd');
@@ -306,7 +138,14 @@ function AddSchedule() {
         const duration = Number((differenceInMinutes(computedEnd, start) / 60).toFixed(2));
         if (duration > 16) {
             toast.error('A shift cannot last more than 16 hours', { position: 'top-right' });
-            setValidationResult(null);
+            return false;
+        }
+
+        // Use validation result from hook
+        if (!validationResult || !validationResult.isValid) {
+            if (validationResult) {
+                toast.error(validationResult.message, { position: 'top-right', autoClose: 5000 });
+            }
             return false;
         }
 
@@ -315,25 +154,9 @@ function AddSchedule() {
             ? userDailyData[eventDate].shifts
             : [];
 
-        const validation = validateShiftOverlap(
-            startHour, 
-            endHour, 
-            eventDate, 
-            existingShiftsForDate,
-            null,
-            { allowOvernight: endsNextDay, maxHours: 16 }
-        );
-
-        setValidationResult(validation);
-
-        if (!validation.isValid) {
-            toast.error(validation.message, { position: 'top-right', autoClose: 5000 });
-            return false;
-        }
-
         if (existingShiftsForDate.length > 0) {
             toast.success(
-                ` Valid shift. Total daily hours (start date): ${validation.totalDailyHours}h`, 
+                ` Valid shift. Total daily hours (start date): ${validationResult.totalDailyHours}h`, 
                 { position: 'top-right', autoClose: 3000 }
             );
         }
@@ -360,7 +183,6 @@ function AddSchedule() {
         setEndHour('')
         setEventDescription('')
         setIsSubmitting(false)
-        setValidationResult(null)
         setEndsNextDay(false)
     }
 
@@ -531,21 +353,21 @@ function AddSchedule() {
                 <div className="stats-grid mb-6">
                     <div className="stat-card">
                         <div className="stat-value">
-                            {colUsersData.length}
+                            {activeUsersCount}
                         </div>
-                        <div className="stat-label">Total Employees</div>
+                        <div className="stat-label">Total Active Employees</div>
                     </div>
                     <div className="stat-card success">
                         <div className="stat-value">
                             {Object.values(weeklyStats).reduce((sum, stat) => sum + stat.totalShifts, 0)}
                         </div>
-                        <div className="stat-label">Total Shifts</div>
+                        <div className="stat-label">Weekly Total Shifts</div>
                     </div>
                     <div className="stat-card warning">
                         <div className="stat-value">
                             {Object.values(weeklyStats).reduce((sum, stat) => sum + stat.weeklyHours, 0)}
                         </div>
-                        <div className="stat-label">Weekly Hours</div>
+                        <div className="stat-label">Weekly Scheduled Hours</div>
                     </div>
                     <div className="stat-card">
                         <div className="stat-value">

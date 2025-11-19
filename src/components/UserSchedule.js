@@ -7,13 +7,15 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
 import { syncShiftDerivedFieldsIfNeeded } from '../utils/shiftSyncHelpers';
+import { useWeeklyStats } from '../hooks/useWeeklyStats';
+import { useUserScheduleData } from '../hooks/useUserScheduleData';
+import { useEarningsCalculation } from '../hooks/useEarningsCalculation';
 
 import {
     format,
     differenceInMinutes,
     startOfWeek,
     endOfWeek,
-    addMinutes,
     isPast,
     addDays,
     startOfDay,
@@ -24,9 +26,8 @@ import UserScheduleHeader from './userSchedule/UserScheduleHeader';
 import WeeklyStatsCard from './userSchedule/WeeklyStatsCard';
 import ScheduleList from './userSchedule/ScheduleList';
 import CalendarPanel from './userSchedule/CalendarPanel';
-import { syncWeeklyEarningsForUserWeek, loadWageHistory, getRateForDate } from '../utils/earningsHelpers';
+import { syncWeeklyEarningsForUserWeek } from '../utils/earningsHelpers';
 import {
-    groupShiftsByDate,
     parseDate,
     parseDateTime
 } from '../utils/scheduleUtils';
@@ -37,14 +38,24 @@ function UserSchedule() {
     const navigate = useNavigate()
     const location = useLocation()
     const userId = location.state?.userId || ''
-    const [currentUserName, setCurrentUserName] = useState(location.state?.userName || 'Employee')
-    const [currentUserCategory, setCurrentUserCategory] = useState(location.state?.userCategory || '')
 
-    const [scheduleData, setScheduleData] = useState([])
-    const [groupedSchedules, setGroupedSchedules] = useState({})
-    const [earningsCache, setEarningsCache] = useState({})
-    const [userData, setUserData] = useState(null)
-    const [loading, setLoading] = useState(true)
+    // Use custom hooks for data management
+    const {
+        userData,
+        scheduleData,
+        groupedSchedules,
+        loading,
+        userName,
+        userCategory
+    } = useUserScheduleData(userId, navigate, location.state?.userName || 'Employee', location.state?.userCategory || '');
+
+    const [recordEarnings, setRecordEarnings] = useState([])
+    const [overtimeSettings, setOvertimeSettings] = useState({ thresholdHours: 40, overtimePercent: 50 })
+
+    // Use custom hooks for calculations
+    useEarningsCalculation(userId, userData, groupedSchedules, overtimeSettings);
+    const weeklyStats = useWeeklyStats(recordEarnings, overtimeSettings);
+
     const [currentView, setCurrentView] = useState('table')
 
     // Time tracking states
@@ -63,21 +74,6 @@ function UserSchedule() {
     const [createShiftVisible, setCreateShiftVisible] = useState(false)
     const [newShiftData, setNewShiftData] = useState(null)
     const [shiftDescription, setShiftDescription] = useState('')
-
-    // Weekly stats
-    const [weeklyStats, setWeeklyStats] = useState({
-        scheduledHours: 0,
-        workedHours: 0,
-        efficiency: 0,
-        weeklyEarnings: 0,
-        regularHours: 0,
-        overtimeHours: 0,
-        regularEarnings: 0,
-        overtimeEarnings: 0,
-        thresholdCrossed: false
-    })
-    const [recordEarnings, setRecordEarnings] = useState([])
-    const [overtimeSettings, setOvertimeSettings] = useState({ thresholdHours: 40, overtimePercent: 50 })
 
     // Listener for RecordEarnings
     useEffect(() => {
@@ -117,85 +113,9 @@ function UserSchedule() {
         loadSettings();
     }, []);
 
-    // Recompute weekly stats
-    useEffect(() => {
-        if (!recordEarnings || recordEarnings.length === 0) {
-            setWeeklyStats({
-                scheduledHours: 0,
-                workedHours: 0,
-                efficiency: 0,
-                weeklyEarnings: 0,
-                regularHours: 0,
-                overtimeHours: 0,
-                regularEarnings: 0,
-                overtimeEarnings: 0,
-                thresholdCrossed: false
-            });
-            return;
-        }
-        const today = new Date();
-        const weekStart = startOfWeek(today, { weekStartsOn: 1 });
-        const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
-
-        let wScheduled = 0, wWorked = 0, wEarnings = 0;
-        let wRegHours = 0, wOtHours = 0, wRegEarn = 0, wOtEarn = 0;
-
-        recordEarnings.forEach(rec => {
-            if (!rec?.date) return;
-            const [y, m, d] = rec.date.split('-').map(Number);
-            const recDate = new Date(y, m - 1, d);
-            if (isNaN(recDate)) return;
-
-            const worked = parseFloat(rec.totalHours) || 0;
-            const scheduled = parseFloat(rec.scheduledHours) || 0;
-
-            if (recDate >= weekStart && recDate <= weekEnd) {
-                wWorked += worked;
-                wScheduled += scheduled;
-                const earn = parseFloat(rec.dayEarnings) || 0;
-                wEarnings += earn;
-
-                const regH = parseFloat(rec.regularHours);
-                const otH = parseFloat(rec.overtimeHours);
-                if (!isNaN(regH)) wRegHours += regH; else wRegHours += worked;
-                if (!isNaN(otH)) wOtHours += otH;
-
-                if (!isNaN(regH) && !isNaN(otH) && rec.hourlyWageSnapshot != null) {
-                    const rate = parseFloat(rec.hourlyWageSnapshot) || 0;
-                    const otPercent = parseFloat(rec.overtimePercent) || 0;
-                    const otMultiplier = 1 + otPercent / 100;
-                    const computedReg = (regH * rate);
-                    const computedOt = (otH * rate * otMultiplier);
-                    wRegEarn += +computedReg.toFixed(2);
-                    wOtEarn += +computedOt.toFixed(2);
-                }
-            }
-        });
-
-        const efficiency = wScheduled > 0 ? ((wWorked / wScheduled) * 100).toFixed(1) : 0;
-
-        if (wRegHours === 0 && wOtHours === 0 && wWorked > 0) {
-            wRegHours = wWorked;
-        }
-        if ((wRegEarn + wOtEarn === 0) && wEarnings > 0) {
-            wRegEarn = +wEarnings.toFixed(2);
-        }
-
-        const threshold = overtimeSettings.thresholdHours || 99999;
-        const thresholdCrossed = wWorked > threshold;
-
-        setWeeklyStats({
-            scheduledHours: +wScheduled.toFixed(2),
-            workedHours: +wWorked.toFixed(2),
-            efficiency,
-            weeklyEarnings: wEarnings.toFixed(2),
-            regularHours: +wRegHours.toFixed(2),
-            overtimeHours: +wOtHours.toFixed(2),
-            regularEarnings: +wRegEarn.toFixed(2),
-            overtimeEarnings: +wOtEarn.toFixed(2),
-            thresholdCrossed
-        });
-    }, [recordEarnings, overtimeSettings]);
+    // Weekly stats now computed by useWeeklyStats hook
+    // User data and schedule now loaded by useUserScheduleData hook  
+    // Earnings calculation now handled by useEarningsCalculation hook
 
     // live clock
     useEffect(() => {
@@ -204,172 +124,6 @@ function UserSchedule() {
         }, 1000);
         return () => clearInterval(interval);
     }, []);
-
-    // Load user data and schedule
-    useEffect(() => {
-        if (!userId) {
-            toast.error('No user ID provided', { position: 'top-right' });
-            navigate('/schedulizer');
-            return;
-        }
-
-        const loadUserInfo = async () => {
-            try {
-                const userDocRef = doc(dbFirestore, 'users', userId);
-                const userDoc = await getDoc(userDocRef);
-                if (userDoc.exists()) {
-                    const data = userDoc.data();
-                    setUserData(data);
-                    if (currentUserName === 'Employee') {
-                        setCurrentUserName(`${data.firstName} ${data.lastName}`);
-                    }
-                    if (!currentUserCategory) {
-                        setCurrentUserCategory(data.category || '');
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading user info:', error);
-            }
-        };
-        loadUserInfo();
-
-        const refColUsers = collection(dbFirestore, 'users', userId, "UserSchedule")
-        const querySchedule = query(refColUsers, orderBy('eventDate', 'desc'))
-        const unsubscribe = onSnapshot(querySchedule, (snapshot) => {
-            const scheduleRegisters = snapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...doc.data()
-            }))
-            setScheduleData(scheduleRegisters)
-            const grouped = groupShiftsByDate(scheduleRegisters);
-            setGroupedSchedules(grouped);
-            
-            // --- Silent reactive sync for external changes (no UI impact)
-            // Ensures totalHoursDay and status stay correct if external apps modify check-in/out fields.
-            try {
-                snapshot.docs.forEach((docSnap) => {
-                    const shiftRef = doc(dbFirestore, 'users', userId, 'UserSchedule', docSnap.id);
-                    const data = docSnap.data();
-                    // Fire-and-forget; avoids blocking UI. Helper only writes when values differ.
-                    syncShiftDerivedFieldsIfNeeded(shiftRef, data).catch((err) => {
-                        console.error('[AutoSync] Failed to sync derived fields', { id: docSnap.id, err });
-                    });
-                });
-            } catch (err) {
-                console.error('[AutoSync] Error preparing sync', err);
-            }
-            setLoading(false)
-        }, (error) => {
-            console.log('Error fetching schedule', error)
-            toast.error('Error loading schedule data', { position: 'top-right' });
-setLoading(false)
-        })
-        return () => unsubscribe()
-    }, [userId, navigate, currentUserName, currentUserCategory, userData])
-
-    // Consolidate daily total hours & earnings into RecordEarnings
-    useEffect(() => {
-        if (!userId || !userData || !userData.hourlyWage) return;
-        if (!groupedSchedules || Object.keys(groupedSchedules).length === 0) return;
-        (async () => {
-            const fallbackRate = parseFloat(userData.hourlyWage) || 0;
-            if (fallbackRate <= 0) return;
-
-            const threshold = parseFloat(overtimeSettings.thresholdHours) || 9999;
-            const overtimePercent = parseFloat(overtimeSettings.overtimePercent) || 0;
-            const overtimeMultiplier = 1 + (overtimePercent / 100);
-
-            const newCache = { ...earningsCache };
-            const writes = [];
-
-            const allDates = Object.keys(groupedSchedules).sort();
-            const historyRates = await loadWageHistory(userId);
-
-            const weekMap = {};
-            allDates.forEach(dateKey => {
-                const [y, m, d] = dateKey.split('-').map(Number);
-                const dateObj = new Date(y, m - 1, d);
-                const tmp = new Date(dateObj.getTime());
-                const day = (tmp.getDay() + 6) % 7; // Monday=0 ... Sunday=6
-                tmp.setDate(tmp.getDate() - day); // week start (Monday)
-                const wkYear = tmp.getFullYear();
-                const jan1 = new Date(wkYear, 0, 1);
-                const daysDiff = Math.floor((tmp - jan1) / (24 * 3600 * 1000));
-                const weekNum = Math.floor(daysDiff / 7) + 1;
-                const weekKey = `${wkYear}-W${String(weekNum).padStart(2, '0')}`;
-                if (!weekMap[weekKey]) weekMap[weekKey] = [];
-                weekMap[weekKey].push(dateKey);
-            });
-
-            Object.keys(weekMap).forEach(weekKey => {
-                let cumulativeWeekHours = 0;
-                weekMap[weekKey].forEach(dateKey => {
-                    const dayGroup = groupedSchedules[dateKey];
-                    if (!dayGroup?.totals) return;
-                    const worked = parseFloat(dayGroup.totals.workedHours || 0);
-                    const scheduledHours = +(parseFloat(dayGroup.totals.scheduledHours || 0).toFixed(2));
-
-                    if (scheduledHours <= 0 && worked <= 0) return;
-
-                    const wage = getRateForDate({ dateStr: dateKey, history: historyRates, fallback: fallbackRate });
-
-                    let regularHours = 0;
-                    let overtimeHours = 0;
-                    if (worked > 0) {
-                        if (cumulativeWeekHours >= threshold) {
-                            overtimeHours = worked;
-                        } else if (cumulativeWeekHours + worked <= threshold) {
-                            regularHours = worked;
-                        } else {
-                            regularHours = threshold - cumulativeWeekHours;
-                            overtimeHours = worked - regularHours;
-                        }
-                        cumulativeWeekHours += worked;
-                    }
-
-                    const regularPay = regularHours * wage;
-                    const overtimePay = overtimeHours * wage * overtimeMultiplier;
-                    const dayEarnings = worked > 0 ? +(regularPay + overtimePay).toFixed(2) : 0;
-                    const totalHours = +worked.toFixed(2);
-
-                    const cacheEntry = earningsCache[dateKey];
-                    const signature = `${totalHours}|${dayEarnings}|${regularHours.toFixed(2)}|${overtimeHours.toFixed(2)}|${scheduledHours.toFixed(2)}|${wage}`;
-                    if (cacheEntry === signature) {
-                        return;
-                    }
-
-                    const recRef = doc(dbFirestore, 'users', userId, 'RecordEarnings', dateKey);
-                    writes.push(
-                        setDoc(recRef, {
-                            date: dateKey,
-                            totalHours: totalHours,
-                            scheduledHours: scheduledHours,
-                            regularHours: +regularHours.toFixed(2),
-                            overtimeHours: +overtimeHours.toFixed(2),
-                            overtimeThreshold: threshold,
-                            overtimePercent: overtimePercent,
-                            dayEarnings: dayEarnings,
-                            hourlyWageSnapshot: wage,
-                            overtimeApplied: overtimeHours > 0,
-                            noWorkRecorded: worked <= 0,
-                            updatedAt: serverTimestamp()
-                        }, { merge: true })
-                    );
-                    newCache[dateKey] = signature;
-                });
-            });
-
-            if (writes.length > 0) {
-                Promise.all(writes)
-                    .then(() => {
-                        setEarningsCache(newCache);
-                    })
-                    .catch(err => {
-                        console.error('Error updating RecordEarnings:', err);
-                    });
-            }
-        })();
-    }, [groupedSchedules, userId, userData, earningsCache, overtimeSettings])
 
     //
     // Calendar events for react-big-calendar
@@ -1206,8 +960,8 @@ setLoading(false)
     return (
         <div className="animate-fade-in">
             <UserScheduleHeader
-                currentUserName={currentUserName}
-                currentUserCategory={currentUserCategory}
+                currentUserName={userName}
+                currentUserCategory={userCategory}
                 currentTime={currentTime}
                 currentView={currentView}
                 setCurrentView={setCurrentView}

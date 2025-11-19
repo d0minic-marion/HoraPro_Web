@@ -1,6 +1,6 @@
 // Helpers for weekly overtime and earnings calculations
 // Extracted from AddSchdule.js
-import { format, addDays, isAfter, endOfWeek, startOfWeek } from 'date-fns';
+import { format, addDays, isAfter } from 'date-fns';
 import { collection, query, where, orderBy, getDocs, doc, setDoc, Timestamp } from 'firebase/firestore';
 import { dbFirestore } from '../connections/ConnFirebaseServices';
 

@@ -6,8 +6,12 @@ import React, {
   useState,
 } from 'react';
 import {
+  collection,
   doc,
   onSnapshot,
+  query,
+  orderBy,
+  limit,
   setDoc,
   Timestamp,
 } from 'firebase/firestore';
@@ -17,7 +21,6 @@ import { dbFirestore } from '../connections/ConnFirebaseServices';
 import './QrDisplayPage.css';
 
 const TOKEN_COLLECTION = 'qrTokens';
-const TOKEN_DOCUMENT = 'current';
 
 const statusMessageMap = {
   loading: 'Waiting for the QR code…',
@@ -68,17 +71,23 @@ const QrDisplayPage = () => {
   const [writerError, setWriterError] = useState('');
   const rotationTimerRef = useRef(null);
   const isMountedRef = useRef(true);
-  const tokenDocRef = useMemo(
-    () => doc(dbFirestore, TOKEN_COLLECTION, TOKEN_DOCUMENT),
-    [dbFirestore],
+  const tokenCollectionRef = useMemo(
+    () => collection(dbFirestore, TOKEN_COLLECTION),
+    [],
   );
 
   useEffect(() => {
     setStatus('loading');
+    const q = query(
+      tokenCollectionRef,
+      orderBy('issuedAt', 'desc'),
+      limit(1)
+    );
+
     const unsubscribe = onSnapshot(
-      tokenDocRef,
+      q,
       (snapshot) => {
-        if (!snapshot.exists()) {
+        if (snapshot.empty) {
           setTokenValue('');
           setIssuedAt(null);
           setExpiresAt(null);
@@ -86,7 +95,7 @@ const QrDisplayPage = () => {
           return;
         }
 
-        const data = snapshot.data();
+        const data = snapshot.docs[0].data();
         const nextValue = typeof data.value === 'string' ? data.value : '';
         const issued = data.issuedAt && typeof data.issuedAt.toDate === 'function'
           ? data.issuedAt.toDate()
@@ -108,7 +117,7 @@ const QrDisplayPage = () => {
       },
     );
     return unsubscribe;
-  }, [tokenDocRef]);
+  }, [tokenCollectionRef]);
 
   useEffect(() => () => {
     isMountedRef.current = false;
@@ -117,9 +126,11 @@ const QrDisplayPage = () => {
   const rotateToken = useCallback(async () => {
     const issued = new Date();
     const expires = new Date(issued.getTime() + 60_000);
+    const docId = issued.getTime().toString();
 
     try {
-      await setDoc(tokenDocRef, {
+      const newTokenDocRef = doc(tokenCollectionRef, docId);
+      await setDoc(newTokenDocRef, {
         value: createTokenValue(),
         issuedAt: Timestamp.fromDate(issued),
         expiresAt: Timestamp.fromDate(expires),
@@ -132,7 +143,7 @@ const QrDisplayPage = () => {
         setWriterError('Failed to refresh the QR code. Retrying…');
       }
     }
-  }, [tokenDocRef]);
+  }, [tokenCollectionRef]);
 
   useEffect(() => {
     rotateToken();
