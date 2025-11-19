@@ -44,6 +44,8 @@ function AddSchedule() {
 
     const [selectedUser, setSelectedUser] = useState(null)
     const [currentView, setCurrentView] = useState('lista');
+    const [filterField, setFilterField] = useState('both'); // first | last | both
+    const [filterText, setFilterText] = useState('');
 
     const activeUsersCount = useMemo(
         () => colUsersData.filter(user => user.isActive !== false).length,
@@ -97,6 +99,60 @@ function AddSchedule() {
             localStorage.setItem('sched_showInactive', showInactive ? 'true' : 'false');
         } catch {}
     }, [showInactive])
+
+    // Filter helpers for Employee List
+    const filteredUsers = useMemo(() => {
+        const base = showInactive ? colUsersData : colUsersData.filter(u => u.isActive !== false);
+        const term = filterText.trim().toLowerCase();
+        if (!term) return base;
+        
+        const filtered = base.filter((u) => {
+            const fn = (u.firstName || '').toLowerCase();
+            const ln = (u.lastName || '').toLowerCase();
+            if (filterField === 'first') return fn.includes(term);
+            if (filterField === 'last') return ln.includes(term);
+            return fn.includes(term) || ln.includes(term);
+        });
+
+        // Show warning if no matches found and return full list
+        if (filtered.length === 0 && term) {
+            toast.warning('No employees match the filter criteria', { 
+                position: 'top-right',
+                autoClose: 3000 
+            });
+            return base;
+        }
+
+        return filtered;
+    }, [colUsersData, showInactive, filterField, filterText]);
+
+    // Dynamic title based on filter
+    const listTitle = useMemo(() => {
+        const filterLabelMap = {
+            first: 'First Name Filtered',
+            last: 'Last Name Filtered',
+            both: 'First/Last Name Filtered'
+        };
+        
+        const term = filterText.trim().toLowerCase();
+        if (!term) return 'Employee List';
+        
+        // Check if there are actual filtered results
+        const base = showInactive ? colUsersData : colUsersData.filter(u => u.isActive !== false);
+        const hasResults = base.some((u) => {
+            const fn = (u.firstName || '').toLowerCase();
+            const ln = (u.lastName || '').toLowerCase();
+            if (filterField === 'first') return fn.includes(term);
+            if (filterField === 'last') return ln.includes(term);
+            return fn.includes(term) || ln.includes(term);
+        });
+        
+        if (hasResults) {
+            return `${filterLabelMap[filterField]} Employee List`;
+        }
+        
+        return 'Employee List';
+    }, [filterField, filterText, colUsersData, showInactive]);
 
     const shiftTypes = [
         { value: 'regular', label: 'Regular Shift', color: '#2563eb' },
@@ -455,14 +511,14 @@ function AddSchedule() {
                     {/* Users List */}
                     <div className="card">
                         <div className="card-header">
-                            <h2 className="card-title">Employee List</h2>
+                            <h2 className="card-title">{listTitle}</h2>
                             <p className="card-subtitle">
                                 Create schedules and manage employee time tracking
                             </p>
                         </div>
                         
                         {(() => {
-                            const usersToShow = showInactive ? colUsersData : colUsersData.filter(u => u.isActive !== false);
+                            const usersToShow = filteredUsers;
                             return usersToShow.length === 0 ? (
                             <div className="text-center py-8">
                                 <p className="text-gray-500 mb-4">No employees found</p>
@@ -475,7 +531,28 @@ function AddSchedule() {
                             </div>
                         ) : (
                             <div className="table-container">
-                                <div className="flex items-center justify-end mb-3">
+                                <div className="flex items-center justify-between mb-3 gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-base font-semibold">Filter employees by: </label>
+                                        <select
+                                            value={filterField}
+                                            onChange={(e) => setFilterField(e.target.value)}
+                                            className="form-select"
+                                            style={{ width: '150px' }}
+                                        >
+                                            <option value="first">First Name</option>
+                                            <option value="last">Last Name</option>
+                                            <option value="both">First/Last Name</option>
+                                        </select>
+                                        <input
+                                            type="text"
+                                            className="form-input"
+                                            placeholder="Type to filter..."
+                                            value={filterText}
+                                            onChange={(e) => setFilterText(e.target.value)}
+                                            style={{ width: '300px' }}
+                                        />
+                                    </div>
                                     <label className="flex items-center gap-2 text-sm text-gray-700">
                                         <input
                                             type="checkbox"

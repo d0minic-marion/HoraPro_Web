@@ -4,6 +4,26 @@ import { parseDate, parseDateTime } from '../../utils/scheduleUtils'
 import { getShiftStatus as getShiftStatusUtil } from '../../utils/scheduleUtils'
 import { computeWorkedHoursForShift } from '../../utils/timeHelpers'
 
+const timeFormatter = new Intl.DateTimeFormat('en-CA', {
+    hour: '2-digit',
+    minute: '2-digit'
+});
+
+function toJSDate(value) {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value.toDate === 'function') return value.toDate();
+    return null;
+}
+
+function formatDateYYYYMMDD(dateObj) {
+    if (!(dateObj instanceof Date)) return '';
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
 function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOutTime, isUpdating }) {
     const statusInfo = getShiftStatusUtil(shift);
 
@@ -50,6 +70,82 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
         return null;
     })();
 
+    const resolvedCheckInDate = (() => {
+        const ts = toJSDate(shift.checkInTimestamp);
+        if (ts) return ts;
+        if (shift.eventDate && shift.checkedInTime) {
+            try {
+                return parseDateTime(shift.eventDate, shift.checkedInTime);
+            } catch {
+                return null;
+            }
+        }
+        return null;
+    })();
+
+    const fallbackStartReference = (() => {
+        if (!shift.eventDate) return null;
+        const sourceHour = shift.checkedInTime || shift.startHour;
+        if (!sourceHour) return null;
+        try {
+            return parseDateTime(shift.eventDate, sourceHour);
+        } catch {
+            return null;
+        }
+    })();
+
+    const resolvedCheckOutDate = (() => {
+        const ts = toJSDate(shift.checkOutTimestamp);
+        if (ts) return ts;
+        if (shift.eventDate && shift.checkedOutTime) {
+            try {
+                let baseDate = shift.endDate && shift.endDate !== shift.eventDate
+                    ? shift.endDate
+                    : shift.eventDate;
+                let end = parseDateTime(baseDate, shift.checkedOutTime);
+
+                const startReference = resolvedCheckInDate || fallbackStartReference;
+
+                const needsNextDayAdjustment = (() => {
+                    if (shift.endDate && shift.endDate !== shift.eventDate) return false;
+                    if (shift.overnight) return true;
+                    if (startReference && end <= startReference) return true;
+                    return false;
+                })();
+
+                if (needsNextDayAdjustment) {
+                    const nextDay = parseDate(shift.eventDate);
+                    nextDay.setDate(nextDay.getDate() + 1);
+                    const nextDayStr = formatDateYYYYMMDD(nextDay);
+                    end = parseDateTime(nextDayStr, shift.checkedOutTime);
+                }
+
+                return end;
+            } catch {
+                return null;
+            }
+        }
+        return null;
+    })();
+
+    const checkInLabel = resolvedCheckInDate
+        ? timeFormatter.format(resolvedCheckInDate)
+        : (shift.checkedInTime || '');
+
+    const checkOutLabel = resolvedCheckOutDate
+        ? timeFormatter.format(resolvedCheckOutDate)
+        : (shift.checkedOutTime || '');
+
+    const showNextDayHint = Boolean(
+        checkOutLabel &&
+        (
+            shift.overnight ||
+            (shift.endDate && shift.endDate !== shift.eventDate) ||
+            (resolvedCheckInDate && resolvedCheckOutDate &&
+                resolvedCheckInDate.toDateString() !== resolvedCheckOutDate.toDateString())
+        )
+    );
+
     return (
         <div className="px-4 py-3 hover:bg-gray-50">
             <div className="flex justify-between items-center">
@@ -73,22 +169,22 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
                     <div className="flex gap-6 text-sm">
                         <div className="flex items-center gap-1">
                             <span style={{ fontWeight: 700, color: '#111827', marginRight:'0.2rem' }}>Check-in:</span>
-                            <span className={shift.checkedInTime ? 'text-green-600 font-mono' : 'text-gray-400'}>
-                                {shift.checkedInTime || 'Not recorded'}
+                            <span className={`${checkInLabel ? 'text-green-600' : 'text-gray-400'} font-semibold`}>
+                                {checkInLabel || 'Not recorded'}
                             </span>
                         </div>
                         <div className="flex items-center gap-1">
                             <span style={{ fontWeight: 700, color: '#111827', marginRight:'0.2rem', marginLeft: '0.5rem' }}> Check-out:</span>
-                            <span className={shift.checkedOutTime ? 'text-blue-600 font-mono' : 'text-gray-400'}>
-                                {shift.checkedOutTime || 'Not recorded'}
+                            <span className={`${checkOutLabel ? 'text-blue-600' : 'text-gray-400'} font-semibold`}>
+                                {checkOutLabel || 'Not recorded'}
                             </span>
-                            {shift.overnight && shift.checkedOutTime && (
+                            {showNextDayHint && (
                                 <span className="text-xs text-gray-500 ml-1">(next day)</span>
                             )}
                         </div>
                         <div className="flex items-center gap-1">
                             <span style={{ fontWeight: 700, color: '#111827', marginRight: '0.2rem', marginLeft: '0.5rem' }}> Total:</span>
-                            <span className={actualWorkedHours != null ? 'text-green-600 font-semibold' : 'text-gray-400'}>
+                            <span className={actualWorkedHours != null ? 'text-green-600 font-semibold' : 'text-gray-400 font-semibold'}>
                                 {actualWorkedHours != null ? `${actualWorkedHours}h` : '-'}
                             </span>
                         </div>
@@ -154,3 +250,4 @@ function ShiftItem({ shift, index, shifts, quickCheckIn, quickCheckOut, editInOu
 }
 
 export default ShiftItem
+
