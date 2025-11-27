@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { dbFirestore, authFirebase } from '../connections/ConnFirebaseServices';
-import { doc, setDoc } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { authFirebase } from '../connections/ConnFirebaseServices';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { toast } from 'react-toastify';
 
 /**
@@ -90,28 +89,20 @@ function useUserCreation() {
         setIsSubmitting(true);
 
         try {
-            // 1. Create Auth account using email + temporary password
-            const userCredential = await createUserWithEmailAndPassword(
-                authFirebase,
-                email.trim(),
-                tempPassword
-            );
+            // Use Cloud Function to create employee (doesn't affect admin session)
+            const functions = getFunctions();
+            const createEmployee = httpsCallable(functions, 'createEmployee');
 
-            const authUser = userCredential.user;
-            const uid = authUser.uid;
-
-            // 2. Store user profile in Firestore at `users/{uid}`
-            const userDocRef = doc(dbFirestore, 'users', uid);
-
-            await setDoc(userDocRef, {
+            const result = await createEmployee({
+                email: email.trim(),
+                password: tempPassword,
                 firstName: firstName.trim(),
                 lastName: lastName.trim(),
                 category: category.trim(),
-                hourlyWage: parseFloat(hourlyWage),
-                email: email.trim(),
-                createdAt: new Date(),
-                isActive: true,
+                hourlyWage: parseFloat(hourlyWage)
             });
+
+            console.log('Employee created:', result.data);
 
             toast.success('User created successfully', {
                 position: 'top-right',
@@ -120,7 +111,10 @@ function useUserCreation() {
             resetForm();
         } catch (error) {
             console.error('Error creating user:', error);
-            toast.error(`Error creating user: ${error.message}`, {
+            
+            const errorMessage = error.message || 'Unknown error occurred';
+            
+            toast.error(`Error creating user: ${errorMessage}`, {
                 position: 'top-right',
             });
         } finally {

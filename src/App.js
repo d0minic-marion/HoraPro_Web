@@ -3,7 +3,7 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom';
 
 import CreateUserPage from './pages/CreateUserPage';
 import AddSchedule from './components/AddSchdule';
@@ -19,6 +19,9 @@ function App() {
     <div className="App">
       <BrowserRouter>
         <Routes>
+          {/* Redirect root to login */}
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          
           {/* Public route: Login */}
           <Route path="/login" element={<LoginPage />} />
 
@@ -31,7 +34,7 @@ function App() {
                 <div className="page-wrapper">
                   <Routes>
                     {/* Home -> CreateUserPage (overtime settings + create employee) */}
-                    <Route path="/" element={<CreateUserPage />} />
+                    <Route path="/home" element={<CreateUserPage />} />
 
                     {/* Scheduler / global view */}
                     <Route path="/schedulizer" element={<AddSchedule />} />

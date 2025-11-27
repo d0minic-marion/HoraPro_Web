@@ -28,8 +28,8 @@ function Navigation() {
           style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}
         >
           <Link
-            to="/"
-            className={`nav-link ${location.pathname === '/' ? 'nav-link-active' : ''}`}
+            to="/home"
+            className={`nav-link ${location.pathname === '/home' ? 'nav-link-active' : ''}`}
           >
             Create User
           </Link>

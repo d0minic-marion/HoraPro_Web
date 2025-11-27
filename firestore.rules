@@ -48,6 +48,9 @@ service cloud.firestore {
       // Employees can only read their own data (for mobile app)
       allow read: if isAdmin() || isOwner(userId);
       
+      // Allow admin to list all users (for schedulizer, user management, etc.)
+      allow list: if isAdmin();
+      
       // Only admins can create employee accounts
       allow create: if isAdmin();
       
@@ -60,8 +63,11 @@ service cloud.firestore {
       
       // User Schedule subcollection
       match /UserSchedule/{scheduleId} {
-        // Admins and owner can read
+        // Admins and owner can read individual schedules
         allow read: if isAdmin() || isOwner(userId);
+        
+        // Allow admin to list all schedules in subcollection
+        allow list: if isAdmin() || isOwner(userId);
         
         // Create new schedule - admin only
         allow create: if isAdmin();
@@ -77,22 +83,33 @@ service cloud.firestore {
       
       // Private Notifications subcollection
       match /PrivateNotification/{notificationId} {
-        allow read: if isAdmin() || isOwner(userId);
-        allow write: if false; // Only Cloud Functions can write notifications
+        allow read, list: if isAdmin() || isOwner(userId);
+        allow write: if isAdmin(); // Admin can write private notifications
       }
       
       // Schedule Notifications subcollection
       match /ScheduleNotification/{notificationId} {
-        allow read: if isAdmin() || isOwner(userId);
-        allow write: if false; // Only Cloud Functions can write notifications
+        allow read, list: if isAdmin() || isOwner(userId);
+        allow write: if isAdmin(); // Admin can write schedule notifications
+      }
+
+      // Record Earnings subcollection
+      match /RecordEarnings/{recordId} {
+        allow read, list: if isAdmin() || isOwner(userId);
+        allow write: if isAdmin();
+      }
+
+      // Wage History subcollection
+      match /WageHistory/{historyId} {
+        allow read, list: if isAdmin() || isOwner(userId);
+        allow write: if isAdmin();
       }
     }
     
     // General Notifications collection - admin only
     match /GeneralNotification/{notificationId} {
       allow read: if isAuthenticated(); // All authenticated users can read
-      allow create: if isAdmin(); // Only admins can create general notifications
-      allow update, delete: if isAdmin(); // Only admins can modify/delete
+      allow write: if isAdmin(); // Only admins can write general notifications
     }
     
     // Overtime Settings (if exists as separate collection)

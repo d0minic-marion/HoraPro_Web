@@ -1,0 +1,16 @@
+{
+  "files": {
+    "main.css": "/static/css/main.56acb20e.css",
+    "main.js": "/static/js/main.ed5f950c.js",
+    "static/js/453.7129e6b3.chunk.js": "/static/js/453.7129e6b3.chunk.js",
+    "static/media/HoraProLogo.png": "/static/media/HoraProLogo.7ded2290145db5e32cd7.png",
+    "index.html": "/index.html",
+    "main.56acb20e.css.map": "/static/css/main.56acb20e.css.map",
+    "main.ed5f950c.js.map": "/static/js/main.ed5f950c.js.map",
+    "453.7129e6b3.chunk.js.map": "/static/js/453.7129e6b3.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.56acb20e.css",
+    "static/js/main.ed5f950c.js"
+  ]
+}

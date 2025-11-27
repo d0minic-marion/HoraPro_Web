@@ -31,8 +31,6 @@ function ProtectedRoute({ children }) {
           } else {
             console.warn('User authenticated but not admin:', user.email);
             setIsAdmin(false);
-            // Sign out non-admin users
-            await authFirebase.signOut();
           }
         } catch (error) {
           console.error('Error checking admin role:', error);

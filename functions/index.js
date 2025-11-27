@@ -658,6 +658,130 @@ exports.createAdminUser = functions.https.onCall(async (data, context) => {
 });
 
 /**
+ * Create Employee User (Cloud Function)
+ * 
+ * Callable function to create employee accounts without affecting admin session.
+ * This solves the problem where createUserWithEmailAndPassword logs out the current admin.
+ * 
+ * Required data:
+ * - email: Employee email address
+ * - password: Temporary password for employee
+ * - firstName: Employee first name
+ * - lastName: Employee last name
+ * - category: Job category
+ * - hourlyWage: Hourly wage rate
+ * 
+ * Returns: { success: true, uid: string, email: string }
+ */
+exports.createEmployee = functions.https.onCall(async (data, context) => {
+  try {
+    // Require authentication
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'Must be authenticated to create employee accounts'
+      );
+    }
+
+    // Verify caller is admin
+    const callerToken = await admin.auth().getUser(context.auth.uid);
+    const callerClaims = callerToken.customClaims || {};
+    
+    if (callerClaims.role !== 'admin') {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Only admins can create employee accounts'
+      );
+    }
+
+    // Validate required fields
+    if (!data.email || !data.password || !data.firstName || !data.lastName || !data.category || data.hourlyWage === undefined) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Missing required fields: email, password, firstName, lastName, category, hourlyWage'
+      );
+    }
+
+    // Validate hourly wage
+    const wage = parseFloat(data.hourlyWage);
+    if (isNaN(wage) || wage < 15.75) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Hourly wage must be at least 15.75'
+      );
+    }
+
+    console.log(`[Employee] Creating employee: ${data.email}`);
+
+    // Create user in Firebase Auth (without affecting admin session)
+    const userRecord = await admin.auth().createUser({
+      email: data.email,
+      password: data.password,
+      displayName: `${data.firstName} ${data.lastName}`,
+      emailVerified: false
+    });
+
+    console.log(`[Employee] User created with UID: ${userRecord.uid}`);
+
+    // Create user document in Firestore
+    await admin.firestore()
+      .collection('users')
+      .doc(userRecord.uid)
+      .set({
+        firstName: data.firstName.trim(),
+        lastName: data.lastName.trim(),
+        category: data.category.trim(),
+        hourlyWage: wage,
+        email: data.email.trim(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        isActive: true
+      });
+
+    console.log(`[Employee] User document created in Firestore`);
+
+    return {
+      success: true,
+      uid: userRecord.uid,
+      email: userRecord.email,
+      message: 'Employee created successfully'
+    };
+
+  } catch (error) {
+    console.error('[Employee] Error creating employee:', error);
+    
+    // Provide user-friendly error messages
+    if (error.code === 'auth/email-already-exists') {
+      throw new functions.https.HttpsError(
+        'already-exists',
+        'An account with this email already exists'
+      );
+    }
+    
+    if (error.code === 'auth/invalid-email') {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Invalid email address format'
+      );
+    }
+
+    if (error.code === 'auth/weak-password') {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Password must be at least 6 characters'
+      );
+    }
+
+    // Re-throw if already an HttpsError
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+
+    // Generic error
+    throw new functions.https.HttpsError('internal', error.message);
+  }
+});
+
+/**
  * Set Admin Role
  * 
  * HTTP callable function to assign admin role to an existing user.

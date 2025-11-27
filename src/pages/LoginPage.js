@@ -47,7 +47,7 @@ function LoginPage() {
 
       // Success - navigate to home
       console.log('Admin login successful:', userCredential.user.email);
-      navigate('/');
+      navigate('/home');
 
     } catch (err) {
       console.error('Login error:', err);
