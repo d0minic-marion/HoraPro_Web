@@ -10,6 +10,7 @@ import { syncShiftDerivedFieldsIfNeeded } from '../utils/shiftSyncHelpers';
 import { useWeeklyStats } from '../hooks/useWeeklyStats';
 import { useUserScheduleData } from '../hooks/useUserScheduleData';
 import { useEarningsCalculation } from '../hooks/useEarningsCalculation';
+import { validateTokenForCheckInOut, fetchLatestQRToken } from '../utils/qrTokenValidator';
 
 import {
     format,
@@ -26,6 +27,7 @@ import UserScheduleHeader from './userSchedule/UserScheduleHeader';
 import WeeklyStatsCard from './userSchedule/WeeklyStatsCard';
 import ScheduleList from './userSchedule/ScheduleList';
 import CalendarPanel from './userSchedule/CalendarPanel';
+import PrivateNotificationModal from './PrivateNotificationModal';
 import { syncWeeklyEarningsForUserWeek } from '../utils/earningsHelpers';
 import {
     parseDate,
@@ -74,6 +76,7 @@ function UserSchedule() {
     const [createShiftVisible, setCreateShiftVisible] = useState(false)
     const [newShiftData, setNewShiftData] = useState(null)
     const [shiftDescription, setShiftDescription] = useState('')
+    const [privateNotificationVisible, setPrivateNotificationVisible] = useState(false)
 
     // Listener for RecordEarnings
     useEffect(() => {
@@ -413,12 +416,29 @@ function UserSchedule() {
 
         setIsUpdating(true);
         try {
+            const tokenData = await fetchLatestQRToken();
+            
+            if (!tokenData || !tokenData.value) {
+                toast.error("QR token not available. Please scan a valid QR code.");
+                setIsUpdating(false);
+                return;
+            }
+
+            const validation = await validateTokenForCheckInOut(tokenData.value);
+            
+            if (!validation.success) {
+                toast.error(`QR validation failed: ${validation.message}`);
+                setIsUpdating(false);
+                return;
+            }
+
             const shiftRef = doc(dbFirestore, 'users', userId, "UserSchedule", reg.id);
 
             await updateDoc(shiftRef, {
                 checkInTimestamp: timestamp,
                 checkedInTime: deleteField(),
-                eventDescription: shiftDescription || reg.eventDescription
+                eventDescription: shiftDescription || reg.eventDescription,
+                qrTokenUsed: tokenData.value
             });
             setEventToEdit(prev => prev && prev.id === reg.id ? {
                 ...prev,
@@ -495,13 +515,30 @@ function UserSchedule() {
 
         setIsUpdating(true);
         try {
+            const tokenData = await fetchLatestQRToken();
+            
+            if (!tokenData || !tokenData.value) {
+                toast.error("QR token not available. Please scan a valid QR code.");
+                setIsUpdating(false);
+                return;
+            }
+
+            const validation = await validateTokenForCheckInOut(tokenData.value);
+            
+            if (!validation.success) {
+                toast.error(`QR validation failed: ${validation.message}`);
+                setIsUpdating(false);
+                return;
+            }
+
             const shiftRef = doc(dbFirestore, 'users', userId, "UserSchedule", reg.id);
 
             const updatePayload = {
                 checkOutTimestamp: timestamp,
                 checkedOutTime: deleteField(),
                 eventDescription: shiftDescription || reg.eventDescription,
-                overnight: isOvernight
+                overnight: isOvernight,
+                qrTokenUsed: tokenData.value
             };
             if (isOvernight) {
                 updatePayload.endDate = effectiveEndDateStr;
@@ -966,6 +1003,8 @@ function UserSchedule() {
                 currentView={currentView}
                 setCurrentView={setCurrentView}
                 onEditProfile={() => navigate(`/editprofile/${userId}`, { state: { backTo: '/userschedule' } })}
+                userId={userId}
+                onOpenPrivateNotification={() => setPrivateNotificationVisible(true)}
             />
 
             {/* Overtime Threshold Alert */}
@@ -1542,6 +1581,14 @@ function UserSchedule() {
                     </div>
                 </div>
             </div>
+
+            {/* Private Notification Modal */}
+            <PrivateNotificationModal 
+                isVisible={privateNotificationVisible}
+                onClose={() => setPrivateNotificationVisible(false)}
+                employeeId={userId}
+                employeeName={userName}
+            />
         </div>
     )
 }

@@ -9,6 +9,8 @@ import CreateUserPage from './pages/CreateUserPage';
 import AddSchedule from './components/AddSchdule';
 import UserSchedule from './components/UserSchedule';
 import EditProfilePage from './pages/EditProfilePage';
+import LoginPage from './pages/LoginPage';
+import ProtectedRoute from './components/ProtectedRoute';
 
 import Navigation from './components/navbar';
 
@@ -16,22 +18,35 @@ function App() {
   return (
     <div className="App">
       <BrowserRouter>
-        <Navigation />
+        <Routes>
+          {/* Public route: Login */}
+          <Route path="/login" element={<LoginPage />} />
 
-        <div className="page-wrapper">
-          <Routes>
-            {/* Home -> CreateUserPage (overtime settings + create employee) */}
-            <Route path="/" element={<CreateUserPage />} />
+          {/* Protected admin routes */}
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <Navigation />
+                <div className="page-wrapper">
+                  <Routes>
+                    {/* Home -> CreateUserPage (overtime settings + create employee) */}
+                    <Route path="/" element={<CreateUserPage />} />
 
-            {/* Scheduler / global view */}
-            <Route path="/schedulizer" element={<AddSchedule />} />
+                    {/* Scheduler / global view */}
+                    <Route path="/schedulizer" element={<AddSchedule />} />
 
-            {/* Individual user schedule page */}
-            <Route path="/userschedule" element={<UserSchedule />} />
-            {/* Edit profile page (no nav link; direct route only) */}
-            <Route path="/editprofile/:userId" element={<EditProfilePage />} />
-          </Routes>
-        </div>
+                    {/* Individual user schedule page */}
+                    <Route path="/userschedule" element={<UserSchedule />} />
+                    
+                    {/* Edit profile page (no nav link; direct route only) */}
+                    <Route path="/editprofile/:userId" element={<EditProfilePage />} />
+                  </Routes>
+                </div>
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
 
         <ToastContainer
           position="top-right"

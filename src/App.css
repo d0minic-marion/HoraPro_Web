@@ -406,6 +406,24 @@
   color: var(--primary-color);
 }
 
+/* Notification Modal Styles */
+.notification-modal {
+  max-width: 600px;
+  width: 90%;
+}
+
+.notification-modal .form-textarea {
+  font-family: inherit;
+  resize: vertical;
+  min-height: 150px;
+}
+
+.notification-modal .modal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 /* Responsive Design for Calendar */
 @media (max-width: 768px) {
   .rbc-toolbar {

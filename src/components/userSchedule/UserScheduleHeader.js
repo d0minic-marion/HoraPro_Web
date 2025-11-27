@@ -1,7 +1,7 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { format } from 'date-fns'
 
-function UserScheduleHeader({ currentUserName, currentUserCategory, currentTime, currentView, setCurrentView, onEditProfile }) {
+function UserScheduleHeader({ currentUserName, currentUserCategory, currentTime, currentView, setCurrentView, onEditProfile, userId, onOpenPrivateNotification }) {
     return (
         <div className="card mb-6">
             <div className="flex justify-between items-center mb-4">
@@ -33,6 +33,14 @@ function UserScheduleHeader({ currentUserName, currentUserCategory, currentTime,
                     className={`btn ${currentView === 'calendar' ? 'btn-primary' : 'btn-secondary'}`}
                 >
                     Calendar View
+                </button>
+                <button
+                    onClick={() => onOpenPrivateNotification && onOpenPrivateNotification()}
+                    className="btn btn-secondary"
+                    style={{ backgroundColor: '#fed7aa', color: '#000' }}
+                    title="Send Private Notification"
+                >
+                    Create Private Notification
                 </button>
                 <button
                     onClick={() => onEditProfile && onEditProfile()}

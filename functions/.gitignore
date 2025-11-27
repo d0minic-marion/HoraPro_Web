@@ -1,0 +1,28 @@
+# Compiled JavaScript files
+**/*.js.map
+
+# TypeScript compiled files
+lib/
+
+# Node modules
+node_modules/
+
+# Firebase cache
+.firebase/
+
+# Logs
+*.log
+firebase-debug.log
+firebase-debug.*.log
+
+# Local environment
+.env
+.env.local
+.runtimeconfig.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

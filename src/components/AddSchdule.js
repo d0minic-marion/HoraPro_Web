@@ -26,6 +26,8 @@ import {
 import useUsersData from '../hooks/useUsersData';
 import useAllSchedules from '../hooks/useAllSchedules';
 import useScheduleValidation from '../hooks/useScheduleValidation';
+import GeneralNotificationModal from './GeneralNotificationModal';
+import PrivateNotificationModal from './PrivateNotificationModal';
 
 const localizer = momentLocalizer(moment);
 
@@ -62,6 +64,11 @@ function AddSchedule() {
     const [visibilitySchdForm, setVisibilitySchdForm] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [endsNextDay, setEndsNextDay] = useState(false) // Overnight flag
+
+    // Notification modal states
+    const [generalNotificationVisible, setGeneralNotificationVisible] = useState(false)
+    const [privateNotificationVisible, setPrivateNotificationVisible] = useState(false)
+    const [selectedEmployeeForNotification, setSelectedEmployeeForNotification] = useState(null)
 
     // Use custom hook for validation
     const validationResult = useScheduleValidation(
@@ -163,12 +170,13 @@ function AddSchedule() {
 
     const timeSlots = useMemo(() => {
         const slots = [];
+        const minutes = [0, 10, 15, 20, 30, 40, 45, 50]; // Multiple of 10 OR 15
         for (let hour = 0; hour < 24; hour++) {
             const h = hour.toString().padStart(2, '0');
-            slots.push(`${h}:00`);
-            slots.push(`${h}:15`);
-            slots.push(`${h}:30`);
-            slots.push(`${h}:45`);
+            for (let minute of minutes) {
+                const m = minute.toString().padStart(2, '0');
+                slots.push(`${h}:${m}`);
+            }
         }
         return slots;
     }, []);
@@ -369,6 +377,24 @@ function AddSchedule() {
         };
     };
 
+    function openGeneralNotificationModal() {
+        setGeneralNotificationVisible(true);
+    }
+
+    function openPrivateNotificationModal(userId, userName) {
+        setSelectedEmployeeForNotification({ id: userId, name: userName });
+        setPrivateNotificationVisible(true);
+    }
+
+    function closeGeneralNotificationModal() {
+        setGeneralNotificationVisible(false);
+    }
+
+    function closePrivateNotificationModal() {
+        setPrivateNotificationVisible(false);
+        setSelectedEmployeeForNotification(null);
+    }
+
     if (loading) {
         return (
             <div className="loading">
@@ -553,15 +579,26 @@ function AddSchedule() {
                                             style={{ width: '300px' }}
                                         />
                                     </div>
-                                    <label className="flex items-center gap-2 text-sm text-gray-700">
-                                        <input
-                                            type="checkbox"
-                                            className="form-checkbox"
-                                            checked={showInactive}
-                                            onChange={(e) => setShowInactive(e.target.checked)}
-                                        />
-                                        Show inactive
-                                    </label>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={openGeneralNotificationModal}
+                                            className="btn btn-sm"
+                                            style={{ backgroundColor: '#fed7aa', color: '#000' }}
+                                            title="Send notification to all employees"
+                                        >
+                                            Create General Notification
+                                        </button>
+                                        <div style={{ width: '20px' }}></div>
+                                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                                            <input
+                                                type="checkbox"
+                                                className="form-checkbox"
+                                                checked={showInactive}
+                                                onChange={(e) => setShowInactive(e.target.checked)}
+                                            />
+                                            Show inactive
+                                        </label>
+                                    </div>
                                 </div>
                                 <table className="table">
                                     <thead>
@@ -647,6 +684,14 @@ function AddSchedule() {
                                                                 title="View User Schedule"
                                                             >
                                                              Schedule View
+                                                            </button>
+                                                            <button
+                                                                onClick={() => openPrivateNotificationModal(user.id, `${user.firstName} ${user.lastName}`)}
+                                                                className="btn btn-sm"
+                                                                style={{ backgroundColor: '#fed7aa', color: '#000' }}
+                                                                title="Send Private Notification"
+                                                            >
+                                                                Create Private Notification
                                                             </button>
                                                             <button
                                                                 onClick={() => navigate(`/editprofile/${user.id}`, { state: { backTo: '/schedulizer' } })}
@@ -929,6 +974,20 @@ function AddSchedule() {
                     </div>
                 </div>
             )}
+
+            {/* General Notification Modal */}
+            <GeneralNotificationModal 
+                isVisible={generalNotificationVisible}
+                onClose={closeGeneralNotificationModal}
+            />
+
+            {/* Private Notification Modal */}
+            <PrivateNotificationModal 
+                isVisible={privateNotificationVisible}
+                onClose={closePrivateNotificationModal}
+                employeeId={selectedEmployeeForNotification?.id}
+                employeeName={selectedEmployeeForNotification?.name}
+            />
         </div>
     )
 }

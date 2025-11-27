@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   collection,
   doc,
@@ -15,9 +16,11 @@ import {
   setDoc,
   Timestamp,
 } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
 import QRCode from 'react-qr-code';
 
-import { dbFirestore } from '../connections/ConnFirebaseServices';
+import { dbFirestore, authFirebase } from '../connections/ConnFirebaseServices';
+import HoraProLogo from '../components/logo/HoraProLogo.png';
 import './QrDisplayPage.css';
 
 const TOKEN_COLLECTION = 'qrTokens';
@@ -64,6 +67,7 @@ function formatTimestamp(date) {
 }
 
 const QrDisplayPage = () => {
+  const navigate = useNavigate();
   const [tokenValue, setTokenValue] = useState('');
   const [status, setStatus] = useState('loading');
   const [issuedAt, setIssuedAt] = useState(null);
@@ -75,6 +79,15 @@ const QrDisplayPage = () => {
     () => collection(dbFirestore, TOKEN_COLLECTION),
     [],
   );
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await signOut(authFirebase);
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  }, [navigate]);
 
   useEffect(() => {
     setStatus('loading');
@@ -172,10 +185,26 @@ const QrDisplayPage = () => {
   return (
     <main className="qr-display-root">
       <div className="qr-display-header">
-        <h1 className="qr-display-title">Shift Check-In QR</h1>
+        <div className="qr-display-logo-box">
+          <img
+            className="qr-display-logo"
+            src={HoraProLogo}
+            alt="Logo HoraPro"
+          />
+        </div>
+        <h1 className="qr-display-title">Shift Check-In/Out QR</h1>
         <p className="qr-display-subtitle">
           Present this code to validate clock-in and clock-out events.
         </p>
+        
+        {/* Logout button - only visible in authenticated QR mode */}
+        <button
+          onClick={handleLogout}
+          className="qr-display-logout-btn"
+          aria-label="Logout"
+        >
+          Logout
+        </button>
       </div>
 
       <section className="qr-display-content">

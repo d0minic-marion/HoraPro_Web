@@ -25,8 +25,17 @@
     "start:admin": "react-scripts start",
     "start:qr": "set PORT=3001&&set REACT_APP_MODE=qr&&react-scripts start",
     "build": "react-scripts build",
+    "build:production": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "sync-firebase-config": "node scripts/sync-firebase-config.js",
+    "install-app": "node scripts/install.js",
+    "deploy-app": "node scripts/deploy.js",
+    "deploy:hosting": "firebase deploy --only hosting",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:rules": "firebase deploy --only firestore:rules",
+    "deploy:preview": "firebase hosting:channel:deploy preview",
+    "deploy:all": "firebase deploy"
   },
   "eslintConfig": {
     "extends": [

@@ -10,6 +10,7 @@ import { computeWorkedHoursForShift, deriveShiftStatus } from '../utils/timeHelp
 import { syncWeeklyEarningsForUserWeek } from '../utils/earningsHelpers';
 import { syncShiftDerivedFieldsIfNeeded } from '../utils/shiftSyncHelpers';
 import { groupShiftsByDate, parseDateTime } from '../utils/scheduleUtils';
+import { initializeScheduleNotificationMonitoring } from '../utils/scheduleNotificationHelpers';
 
 /**
  * Custom hook to load all schedules for all users with real-time synchronization
@@ -26,6 +27,7 @@ function useAllSchedules(users) {
         if (!users || users.length === 0) return;
 
         const stats = {};
+        let notificationCleanup = null;
 
         const loadAllSchedules = async () => {
             for (const user of users) {
@@ -114,10 +116,20 @@ function useAllSchedules(users) {
                         );
 
                         // Update daily schedules state (used by validation)
-                        setUserDailySchedules(prev => ({
-                            ...prev,
-                            [user.id]: userDailyGroup
-                        }));
+                        setUserDailySchedules(prev => {
+                            const updated = {
+                                ...prev,
+                                [user.id]: userDailyGroup
+                            };
+                            
+                            // Reinitialize notification monitoring with updated schedules
+                            if (notificationCleanup) {
+                                notificationCleanup();
+                            }
+                            notificationCleanup = initializeScheduleNotificationMonitoring(users, updated);
+                            
+                            return updated;
+                        });
 
                         // Calculate weekly stats (visual only, current week)
                         const nowForWeek = new Date();
@@ -158,7 +170,12 @@ function useAllSchedules(users) {
 
         loadAllSchedules();
 
-        // No cleanup needed - onSnapshot listeners are created inside loadAllSchedules
+        // Return cleanup function
+        return () => {
+            if (notificationCleanup) {
+                notificationCleanup();
+            }
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [users]);
 

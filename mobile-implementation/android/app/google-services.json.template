@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "247938991180",
+    "project_id": "testinfirebase-b90f7",
+    "storage_bucket": "testinfirebase-b90f7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:${config.messagingSenderId}:android:REPLACE_WITH_YOUR_ANDROID_APP_ID",
+        "android_client_info": {
+          "package_name": "com.horapro.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1MBNiU5SaWrfLnCbszjjWUPr0IOLEbeE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

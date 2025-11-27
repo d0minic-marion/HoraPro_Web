@@ -1,0 +1,115 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is an admin
+    function isAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.role == 'admin';
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper function to validate QR token is provided for timestamp updates
+    function hasValidQRToken() {
+      return request.resource.data.qrTokenUsed is string && 
+             request.resource.data.qrTokenUsed.size() > 0;
+    }
+    
+    // Helper function to check if checkInTimestamp or checkOutTimestamp is being modified
+    function isTimestampUpdate() {
+      let checkInChanged = request.resource.data.diff(resource.data).affectedKeys().hasAny(['checkInTimestamp']);
+      let checkOutChanged = request.resource.data.diff(resource.data).affectedKeys().hasAny(['checkOutTimestamp']);
+      return checkInChanged || checkOutChanged;
+    }
+    
+    // QR Tokens collection - admin-only creation, authenticated read
+    // Tokens rotate every 60 seconds and are used for timestamp validation
+    // Only authenticated admins can create tokens via the protected QR Display
+    // Only authenticated employees can read tokens to validate their check-in/out
+    match /qrTokens/{tokenId} {
+      allow read: if isAuthenticated(); // Only authenticated users (employees) can read
+      allow create: if isAdmin(); // Only admins can create tokens
+      allow update, delete: if false; // Prevent modification/deletion
+    }
+    
+    // Users collection - admin access required for management
+    match /users/{userId} {
+      // Admins can read all user documents
+      // Employees can only read their own data (for mobile app)
+      allow read: if isAdmin() || isOwner(userId);
+      
+      // Only admins can create employee accounts
+      allow create: if isAdmin();
+      
+      // Only admins can update user profiles
+      // Employees cannot modify their own profiles (prevents salary/role tampering)
+      allow update: if isAdmin();
+      
+      // Only admins can delete users
+      allow delete: if isAdmin();
+      
+      // User Schedule subcollection
+      match /UserSchedule/{scheduleId} {
+        // Admins and owner can read
+        allow read: if isAdmin() || isOwner(userId);
+        
+        // Create new schedule - admin only
+        allow create: if isAdmin();
+        
+        // Update schedule - admin or owner with QR token for timestamps
+        allow update: if isAdmin() || (
+          isOwner(userId) && (!isTimestampUpdate() || hasValidQRToken())
+        );
+        
+        // Delete schedule - admin only
+        allow delete: if isAdmin();
+      }
+      
+      // Private Notifications subcollection
+      match /PrivateNotification/{notificationId} {
+        allow read: if isAdmin() || isOwner(userId);
+        allow write: if false; // Only Cloud Functions can write notifications
+      }
+      
+      // Schedule Notifications subcollection
+      match /ScheduleNotification/{notificationId} {
+        allow read: if isAdmin() || isOwner(userId);
+        allow write: if false; // Only Cloud Functions can write notifications
+      }
+    }
+    
+    // General Notifications collection - admin only
+    match /GeneralNotification/{notificationId} {
+      allow read: if isAuthenticated(); // All authenticated users can read
+      allow create: if isAdmin(); // Only admins can create general notifications
+      allow update, delete: if isAdmin(); // Only admins can modify/delete
+    }
+    
+    // Overtime Settings (if exists as separate collection)
+    match /settings/{settingId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // System Settings collection (includes OvertimeRules)
+    match /SystemSettings/{documentId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // Default deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
