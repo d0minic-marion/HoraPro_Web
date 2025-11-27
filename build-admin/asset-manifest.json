@@ -1,16 +1,16 @@
 {
   "files": {
     "main.css": "/static/css/main.f5beb825.css",
-    "main.js": "/static/js/main.f84e2e70.js",
+    "main.js": "/static/js/main.30f950a9.js",
     "static/js/453.7129e6b3.chunk.js": "/static/js/453.7129e6b3.chunk.js",
     "static/media/HoraProLogo.png": "/static/media/HoraProLogo.7ded2290145db5e32cd7.png",
     "index.html": "/index.html",
     "main.f5beb825.css.map": "/static/css/main.f5beb825.css.map",
-    "main.f84e2e70.js.map": "/static/js/main.f84e2e70.js.map",
+    "main.30f950a9.js.map": "/static/js/main.30f950a9.js.map",
     "453.7129e6b3.chunk.js.map": "/static/js/453.7129e6b3.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.f5beb825.css",
-    "static/js/main.f84e2e70.js"
+    "static/js/main.30f950a9.js"
   ]
 }
