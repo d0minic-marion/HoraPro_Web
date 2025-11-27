@@ -10,7 +10,7 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 
 const isQrMode = process.env.REACT_APP_MODE === 'qr';
 
-root.render(isQrMode ? <QrApp /> : <App />);
+root.render(<QrApp />);
 
 // If you want to start measuring performance in your app, pass a function
 // to log results (for example: reportWebVitals(console.log))

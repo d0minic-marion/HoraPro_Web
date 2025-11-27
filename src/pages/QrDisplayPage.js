@@ -196,15 +196,6 @@ const QrDisplayPage = () => {
         <p className="qr-display-subtitle">
           Present this code to validate clock-in and clock-out events.
         </p>
-        
-        {/* Logout button - only visible in authenticated QR mode */}
-        <button
-          onClick={handleLogout}
-          className="qr-display-logout-btn"
-          aria-label="Logout"
-        >
-          Logout
-        </button>
       </div>
 
       <section className="qr-display-content">
@@ -233,6 +224,15 @@ const QrDisplayPage = () => {
             )}
           </dl>
         )}
+
+        {/* Logout button - positioned below the meta card */}
+        <button
+          onClick={handleLogout}
+          className="qr-display-logout-btn"
+          aria-label="Logout"
+        >
+          Logout
+        </button>
 
         {!isReady && (
           <p className="qr-display-status">{activeMessage}</p>
